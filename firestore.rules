@@ -1,0 +1,462 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net (Default-Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Global Security Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    // Verified Bootstrapped Super Admin + Trusted /admins Role Checks
+    function isBootstrappedSuperAdmin() {
+      return isSignedIn() &&
+             request.auth.token.email == 'abdulmunafcox101@gmail.com' &&
+             request.auth.token.email_verified == true;
+    }
+
+    function isSuperAdmin() {
+      return isBootstrappedSuperAdmin() || (
+        isSignedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'SUPER_ADMIN'
+      );
+    }
+
+    function isAnyAdmin() {
+      return isBootstrappedSuperAdmin() || (
+        isSignedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true
+      );
+    }
+
+    function isPaymentAdmin() {
+      return isSuperAdmin() || (
+        isSignedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.canVerifyPayments == true
+      );
+    }
+
+    function isUserAdmin() {
+      return isSuperAdmin() || (
+        isSignedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.canManageUsers == true
+      );
+    }
+
+    // 3. Entity Validation Blueprints
+    function isValidBusinessAccount(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             (!('ownerEmail' in data) || (data.ownerEmail is string && data.ownerEmail.size() <= 200)) &&
+             data.shopName is string && data.shopName.size() >= 1 && data.shopName.size() <= 120 &&
+             data.ownerName is string && data.ownerName.size() >= 1 && data.ownerName.size() <= 120 &&
+             data.phone is string && data.phone.size() <= 30 &&
+             data.address is string && data.address.size() <= 300 &&
+             data.businessType is string && data.businessType.size() >= 1 && data.businessType.size() <= 80 &&
+             (!('logoUri' in data) || (data.logoUri is string && data.logoUri.size() <= 1000)) &&
+             data.subscriptionTier in ['FREE', 'BASIC', 'PREMIUM', 'BUSINESS'] &&
+             data.subscriptionMonths is int && data.subscriptionMonths >= 0 && data.subscriptionMonths <= 120 &&
+             data.subscriptionExpiresAtMillis is int && data.subscriptionExpiresAtMillis >= 0 &&
+             data.blocked is bool;
+    }
+
+    function isValidBranch(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+             data.address is string && data.address.size() <= 300 &&
+             data.phone is string && data.phone.size() <= 30 &&
+             data.mainBranch is bool;
+    }
+
+    function isValidProduct(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.branchId is string && data.branchId.size() >= 1 && data.branchId.size() <= 128 &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+             data.sku is string && data.sku.size() <= 64 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 80 &&
+             data.costPrice is number && data.costPrice >= 0 &&
+             data.sellPrice is number && data.sellPrice >= 0 &&
+             data.stockQty is number && data.stockQty >= 0 &&
+             data.minStockAlert is number && data.minStockAlert >= 0 &&
+             (!('photoUri' in data) || (data.photoUri is string && data.photoUri.size() <= 1000));
+    }
+
+    function isValidParty(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.branchId is string && data.branchId.size() >= 1 && data.branchId.size() <= 128 &&
+             data.partyType in ['CUSTOMER', 'SUPPLIER'] &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+             data.phone is string && data.phone.size() <= 30 &&
+             data.address is string && data.address.size() <= 300 &&
+             data.totalAmount is number && data.totalAmount >= 0 &&
+             data.paidAmount is number && data.paidAmount >= 0 &&
+             data.dueAmount is number && data.dueAmount >= 0;
+    }
+
+    function isValidTransaction(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.branchId is string && data.branchId.size() >= 1 && data.branchId.size() <= 128 &&
+             data.txType in ['SALE', 'PURCHASE', 'DUE_COLLECTION', 'SUPPLIER_PAYMENT', 'INCOME', 'EXPENSE'] &&
+             data.partyId is string && data.partyId.size() <= 128 &&
+             data.partyName is string && data.partyName.size() <= 120 &&
+             data.subtotal is number && data.subtotal >= 0 &&
+             data.discount is number && data.discount >= 0 &&
+             data.totalAmount is number && data.totalAmount >= 0 &&
+             data.paidAmount is number && data.paidAmount >= 0 &&
+             data.dueAmount is number && data.dueAmount >= 0 &&
+             data.cogsTotal is number && data.cogsTotal >= 0 &&
+             data.category is string && data.category.size() <= 80 &&
+             data.note is string && data.note.size() <= 500 &&
+             data.status in ['COMPLETED', 'CANCELLED'] &&
+             data.operatorName is string && data.operatorName.size() >= 1 && data.operatorName.size() <= 100 &&
+             data.lineItemsJson is string && data.lineItemsJson.size() <= 20000 &&
+             data.txDateMillis is int && data.txDateMillis >= 0;
+    }
+
+    function isValidStockLog(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.branchId is string && data.branchId.size() >= 1 && data.branchId.size() <= 128 &&
+             data.productId is string && data.productId.size() >= 1 && data.productId.size() <= 128 &&
+             data.productName is string && data.productName.size() >= 1 && data.productName.size() <= 120 &&
+             data.changeQty is number &&
+             data.reason is string && data.reason.size() >= 1 && data.reason.size() <= 120 &&
+             data.referenceTxId is string && data.referenceTxId.size() <= 128;
+    }
+
+    function isValidEmployee(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+             data.phone is string && data.phone.size() <= 30 &&
+             data.role in ['MANAGER', 'EMPLOYEE'] &&
+             data.pinCode is string && data.pinCode.size() >= 4 && data.pinCode.size() <= 12 &&
+             data.branchId is string && data.branchId.size() >= 1 && data.branchId.size() <= 128 &&
+             data.canSell is bool &&
+             data.canPurchase is bool &&
+             data.canViewReports is bool &&
+             data.canManageStock is bool &&
+             data.monthlySalary is number && data.monthlySalary >= 0 &&
+             data.active is bool;
+    }
+
+    function isValidNotification(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.body is string && data.body.size() >= 1 && data.body.size() <= 500 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 60 &&
+             data.readFlag is bool;
+    }
+
+    function isValidSubscriptionPackage(data) {
+      return data.tier in ['FREE', 'BASIC', 'PREMIUM', 'BUSINESS'] &&
+             data.nameBn is string && data.nameBn.size() >= 1 && data.nameBn.size() <= 60 &&
+             data.nameEn is string && data.nameEn.size() >= 1 && data.nameEn.size() <= 60 &&
+             data.monthlyPriceBdt is number && data.monthlyPriceBdt >= 0 &&
+             data.maxBranches is int && data.maxBranches >= 1 &&
+             data.maxEmployees is int && data.maxEmployees >= 0 &&
+             data.aiEnabled is bool &&
+             data.exportEnabled is bool;
+    }
+
+    function isValidPaymentRequest(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.userEmail is string && data.userEmail.size() <= 200 &&
+             data.shopName is string && data.shopName.size() >= 1 && data.shopName.size() <= 120 &&
+             data.method in ['BKASH', 'NAGAD'] &&
+             data.senderNumber is string && data.senderNumber.size() >= 6 && data.senderNumber.size() <= 25 &&
+             data.transactionId is string && data.transactionId.size() >= 4 && data.transactionId.size() <= 64 &&
+             data.amountBdt is number && data.amountBdt > 0 &&
+             data.packageTier in ['BASIC', 'PREMIUM', 'BUSINESS'] &&
+             data.durationMonths in [1, 3, 6, 12] &&
+             (!('screenshotUri' in data) || (data.screenshotUri is string && data.screenshotUri.size() <= 1000)) &&
+             data.status in ['PENDING', 'APPROVED', 'REJECTED'] &&
+             data.adminNote is string && data.adminNote.size() <= 300;
+    }
+
+    function isValidAdminUser(data) {
+      return data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+             data.email is string && data.email.size() >= 3 && data.email.size() <= 200 &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 120 &&
+             data.role in ['SUPER_ADMIN', 'SUB_ADMIN'] &&
+             data.canVerifyPayments is bool &&
+             data.canManageUsers is bool &&
+             data.canViewLimitedReports is bool &&
+             data.active is bool;
+    }
+
+    function isValidAuditLog(data) {
+      return data.actorUid is string && data.actorUid.size() >= 1 && data.actorUid.size() <= 128 &&
+             data.actorEmail is string && data.actorEmail.size() <= 200 &&
+             data.action is string && data.action.size() >= 1 && data.action.size() <= 100 &&
+             data.targetId is string && data.targetId.size() <= 128 &&
+             data.details is string && data.details.size() <= 500;
+    }
+
+    // 4. Collection Rules
+
+    // Business Accounts Registry (Owner + Admin SaaS Oversight)
+    match /business_accounts/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAnyAdmin());
+      allow list: if isAnyAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isValidId(userId) &&
+                       isOwner(userId) &&
+                       isValidBusinessAccount(incoming()) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().subscriptionTier == 'FREE' &&
+                       incoming().blocked == false &&
+                       incoming().keys().hasAll(['userId', 'shopName', 'ownerName', 'phone', 'address', 'businessType', 'subscriptionTier', 'subscriptionMonths', 'subscriptionExpiresAtMillis', 'blocked', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'ownerEmail', 'shopName', 'ownerName', 'phone', 'address', 'businessType', 'logoUri', 'subscriptionTier', 'subscriptionMonths', 'subscriptionExpiresAtMillis', 'blocked', 'createdAt', 'updatedAt']) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       isValidTimestamp(incoming().updatedAt);
+      allow update: if isValidId(userId) &&
+                       isValidBusinessAccount(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidTimestamp(incoming().updatedAt) && (
+                         (isOwner(userId) &&
+                          incoming().subscriptionTier == existing().subscriptionTier &&
+                          incoming().subscriptionMonths == existing().subscriptionMonths &&
+                          incoming().subscriptionExpiresAtMillis == existing().subscriptionExpiresAtMillis &&
+                          incoming().blocked == existing().blocked &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['ownerEmail', 'shopName', 'ownerName', 'phone', 'address', 'businessType', 'logoUri', 'updatedAt'])) ||
+                         (isPaymentAdmin() &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['subscriptionTier', 'subscriptionMonths', 'subscriptionExpiresAtMillis', 'updatedAt'])) ||
+                         (isUserAdmin() &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['blocked', 'subscriptionTier', 'subscriptionMonths', 'subscriptionExpiresAtMillis', 'updatedAt']))
+                       );
+      allow delete: if isValidId(userId) && isSuperAdmin();
+    }
+
+    // Owner-Isolated Business Subcollections under /users/{userId}
+    match /users/{userId} {
+      match /branches/{branchId} {
+        allow get: if isValidId(userId) && isValidId(branchId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+        allow create: if isValidId(userId) && isValidId(branchId) && isOwner(userId) &&
+                         isValidBranch(incoming()) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'name', 'address', 'phone', 'mainBranch', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'name', 'address', 'phone', 'mainBranch', 'createdAt', 'updatedAt']) &&
+                         isValidTimestamp(incoming().createdAt) &&
+                         isValidTimestamp(incoming().updatedAt);
+        allow update: if isValidId(userId) && isValidId(branchId) && isOwner(userId) &&
+                         isValidBranch(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['name', 'address', 'phone', 'mainBranch', 'updatedAt']);
+        allow delete: if isValidId(userId) && isValidId(branchId) && isOwner(userId);
+      }
+
+      match /products/{productId} {
+        allow get: if isValidId(userId) && isValidId(productId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+        allow create: if isValidId(userId) && isValidId(productId) && isOwner(userId) &&
+                         isValidProduct(incoming()) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'branchId', 'name', 'sku', 'category', 'costPrice', 'sellPrice', 'stockQty', 'minStockAlert', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'branchId', 'name', 'sku', 'category', 'costPrice', 'sellPrice', 'stockQty', 'minStockAlert', 'photoUri', 'createdAt', 'updatedAt']) &&
+                         isValidTimestamp(incoming().createdAt) &&
+                         isValidTimestamp(incoming().updatedAt);
+        allow update: if isValidId(userId) && isValidId(productId) && isOwner(userId) &&
+                         isValidProduct(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['branchId', 'name', 'sku', 'category', 'costPrice', 'sellPrice', 'stockQty', 'minStockAlert', 'photoUri', 'updatedAt']);
+        allow delete: if isValidId(userId) && isValidId(productId) && isOwner(userId);
+      }
+
+      match /parties/{partyId} {
+        allow get: if isValidId(userId) && isValidId(partyId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+        allow create: if isValidId(userId) && isValidId(partyId) && isOwner(userId) &&
+                         isValidParty(incoming()) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'branchId', 'partyType', 'name', 'phone', 'address', 'totalAmount', 'paidAmount', 'dueAmount', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'branchId', 'partyType', 'name', 'phone', 'address', 'totalAmount', 'paidAmount', 'dueAmount', 'createdAt', 'updatedAt']) &&
+                         isValidTimestamp(incoming().createdAt) &&
+                         isValidTimestamp(incoming().updatedAt);
+        allow update: if isValidId(userId) && isValidId(partyId) && isOwner(userId) &&
+                         isValidParty(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().partyType == existing().partyType &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['branchId', 'name', 'phone', 'address', 'totalAmount', 'paidAmount', 'dueAmount', 'updatedAt']);
+        allow delete: if isValidId(userId) && isValidId(partyId) && isOwner(userId);
+      }
+
+      match /transactions/{txId} {
+        allow get: if isValidId(userId) && isValidId(txId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+        allow create: if isValidId(userId) && isValidId(txId) && isOwner(userId) &&
+                         isValidTransaction(incoming()) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'branchId', 'txType', 'partyId', 'partyName', 'subtotal', 'discount', 'totalAmount', 'paidAmount', 'dueAmount', 'cogsTotal', 'category', 'note', 'status', 'operatorName', 'lineItemsJson', 'txDateMillis', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'branchId', 'txType', 'partyId', 'partyName', 'subtotal', 'discount', 'totalAmount', 'paidAmount', 'dueAmount', 'cogsTotal', 'category', 'note', 'status', 'operatorName', 'lineItemsJson', 'txDateMillis', 'createdAt', 'updatedAt']) &&
+                         isValidTimestamp(incoming().createdAt) &&
+                         isValidTimestamp(incoming().updatedAt);
+        allow update: if isValidId(userId) && isValidId(txId) && isOwner(userId) &&
+                         isValidTransaction(incoming()) &&
+                         existing().status != 'CANCELLED' &&
+                         incoming().userId == existing().userId &&
+                         incoming().txType == existing().txType &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['partyId', 'partyName', 'subtotal', 'discount', 'totalAmount', 'paidAmount', 'dueAmount', 'cogsTotal', 'category', 'note', 'status', 'lineItemsJson', 'updatedAt']);
+        allow delete: if isValidId(userId) && isValidId(txId) && isOwner(userId);
+      }
+
+      match /stock_logs/{logId} {
+        allow get: if isValidId(userId) && isValidId(logId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+        allow create: if isValidId(userId) && isValidId(logId) && isOwner(userId) &&
+                         isValidStockLog(incoming()) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'branchId', 'productId', 'productName', 'changeQty', 'reason', 'referenceTxId', 'createdAt']) &&
+                         incoming().keys().hasOnly(['userId', 'branchId', 'productId', 'productName', 'changeQty', 'reason', 'referenceTxId', 'createdAt']) &&
+                         isValidTimestamp(incoming().createdAt);
+        allow update, delete: if false;
+      }
+
+      match /employees/{employeeId} {
+        allow get: if isValidId(userId) && isValidId(employeeId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+        allow create: if isValidId(userId) && isValidId(employeeId) && isOwner(userId) &&
+                         isValidEmployee(incoming()) &&
+                         incoming().userId == request.auth.uid &&
+                         incoming().keys().hasAll(['userId', 'name', 'phone', 'role', 'pinCode', 'branchId', 'canSell', 'canPurchase', 'canViewReports', 'canManageStock', 'monthlySalary', 'active', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'name', 'phone', 'role', 'pinCode', 'branchId', 'canSell', 'canPurchase', 'canViewReports', 'canManageStock', 'monthlySalary', 'active', 'createdAt', 'updatedAt']) &&
+                         isValidTimestamp(incoming().createdAt) &&
+                         isValidTimestamp(incoming().updatedAt);
+        allow update: if isValidId(userId) && isValidId(employeeId) && isOwner(userId) &&
+                         isValidEmployee(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidTimestamp(incoming().updatedAt) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['name', 'phone', 'role', 'pinCode', 'branchId', 'canSell', 'canPurchase', 'canViewReports', 'canManageStock', 'monthlySalary', 'active', 'updatedAt']);
+        allow delete: if isValidId(userId) && isValidId(employeeId) && isOwner(userId);
+      }
+
+      match /notifications/{notifId} {
+        allow get: if isValidId(userId) && isValidId(notifId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+        allow create: if isValidId(userId) && isValidId(notifId) && (isOwner(userId) || isAnyAdmin()) &&
+                         isValidNotification(incoming()) &&
+                         incoming().userId == userId &&
+                         incoming().keys().hasAll(['userId', 'title', 'body', 'category', 'readFlag', 'createdAt']) &&
+                         incoming().keys().hasOnly(['userId', 'title', 'body', 'category', 'readFlag', 'createdAt']) &&
+                         isValidTimestamp(incoming().createdAt);
+        allow update: if isValidId(userId) && isValidId(notifId) && isOwner(userId) &&
+                         isValidNotification(incoming()) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['readFlag']);
+        allow delete: if isValidId(userId) && isValidId(notifId) && isOwner(userId);
+      }
+    }
+
+    // SaaS Subscription Packages (Publicly readable to signed-in users; Super Admin writable)
+    match /subscription_packages/{packageId} {
+      allow get: if isValidId(packageId) && isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isValidId(packageId) && isSuperAdmin() &&
+                       isValidSubscriptionPackage(incoming()) &&
+                       incoming().keys().hasAll(['tier', 'nameBn', 'nameEn', 'monthlyPriceBdt', 'maxBranches', 'maxEmployees', 'aiEnabled', 'exportEnabled', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['tier', 'nameBn', 'nameEn', 'monthlyPriceBdt', 'maxBranches', 'maxEmployees', 'aiEnabled', 'exportEnabled', 'updatedAt']) &&
+                       isValidTimestamp(incoming().updatedAt);
+      allow update: if isValidId(packageId) && isSuperAdmin() &&
+                       isValidSubscriptionPackage(incoming()) &&
+                       incoming().tier == existing().tier &&
+                       isValidTimestamp(incoming().updatedAt) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['nameBn', 'nameEn', 'monthlyPriceBdt', 'maxBranches', 'maxEmployees', 'aiEnabled', 'exportEnabled', 'updatedAt']);
+      allow delete: if isValidId(packageId) && isSuperAdmin();
+    }
+
+    // Manual bKash / Nagad Payment Requests
+    match /payment_requests/{requestId} {
+      allow get: if isValidId(requestId) && (isPaymentAdmin() || (isSignedIn() && existing().userId == request.auth.uid));
+      allow list: if isPaymentAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isValidId(requestId) && isSignedIn() &&
+                       isValidPaymentRequest(incoming()) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().status == 'PENDING' &&
+                       incoming().keys().hasAll(['userId', 'userEmail', 'shopName', 'method', 'senderNumber', 'transactionId', 'amountBdt', 'packageTier', 'durationMonths', 'status', 'adminNote', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'userEmail', 'shopName', 'method', 'senderNumber', 'transactionId', 'amountBdt', 'packageTier', 'durationMonths', 'screenshotUri', 'status', 'adminNote', 'createdAt', 'updatedAt']) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       isValidTimestamp(incoming().updatedAt);
+      allow update: if isValidId(requestId) && isPaymentAdmin() &&
+                       isValidPaymentRequest(incoming()) &&
+                       existing().status == 'PENDING' &&
+                       incoming().status in ['APPROVED', 'REJECTED'] &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidTimestamp(incoming().updatedAt) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'adminNote', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    // Super Admin & Sub-Admin Assignments
+    match /admins/{adminUid} {
+      allow get: if isValidId(adminUid) && (isOwner(adminUid) || isSuperAdmin());
+      allow list: if isSuperAdmin();
+      allow create: if isValidId(adminUid) && isSuperAdmin() &&
+                       isValidAdminUser(incoming()) &&
+                       incoming().uid == adminUid &&
+                       incoming().keys().hasAll(['uid', 'email', 'name', 'role', 'canVerifyPayments', 'canManageUsers', 'canViewLimitedReports', 'active', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['uid', 'email', 'name', 'role', 'canVerifyPayments', 'canManageUsers', 'canViewLimitedReports', 'active', 'createdAt', 'updatedAt']) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       isValidTimestamp(incoming().updatedAt);
+      allow update: if isValidId(adminUid) && isSuperAdmin() &&
+                       isValidAdminUser(incoming()) &&
+                       incoming().uid == existing().uid &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidTimestamp(incoming().updatedAt) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['email', 'name', 'role', 'canVerifyPayments', 'canManageUsers', 'canViewLimitedReports', 'active', 'updatedAt']);
+      allow delete: if isValidId(adminUid) && isSuperAdmin();
+    }
+
+    // Immutable Admin Audit Logs
+    match /audit_logs/{logId} {
+      allow get: if isValidId(logId) && isSuperAdmin();
+      allow list: if isSuperAdmin();
+      allow create: if isValidId(logId) && isAnyAdmin() &&
+                       isValidAuditLog(incoming()) &&
+                       incoming().actorUid == request.auth.uid &&
+                       incoming().keys().hasAll(['actorUid', 'actorEmail', 'action', 'targetId', 'details', 'createdAt']) &&
+                       incoming().keys().hasOnly(['actorUid', 'actorEmail', 'action', 'targetId', 'details', 'createdAt']) &&
+                       isValidTimestamp(incoming().createdAt);
+      allow update, delete: if false;
+    }
+  }
+}

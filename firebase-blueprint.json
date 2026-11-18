@@ -1,0 +1,280 @@
+{
+  "entities": {
+    "BusinessAccount": {
+      "title": "BusinessAccount",
+      "description": "Business owner profile, subscription tier, and account status",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner Firebase Auth UID" },
+        "ownerEmail": { "type": "string", "description": "Owner verified email" },
+        "shopName": { "type": "string", "description": "Business or shop name" },
+        "ownerName": { "type": "string", "description": "Business owner full name" },
+        "phone": { "type": "string", "description": "Business mobile number" },
+        "address": { "type": "string", "description": "Shop address" },
+        "businessType": { "type": "string", "description": "Type of business" },
+        "logoUri": { "type": "string", "description": "Local or remote logo URI" },
+        "subscriptionTier": { "type": "string", "enum": ["FREE", "BASIC", "PREMIUM", "BUSINESS"] },
+        "subscriptionMonths": { "type": "integer" },
+        "subscriptionExpiresAtMillis": { "type": "integer" },
+        "blocked": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
+      },
+      "required": ["userId", "shopName", "ownerName", "phone", "address", "businessType", "subscriptionTier", "subscriptionMonths", "subscriptionExpiresAtMillis", "blocked", "createdAt", "updatedAt"]
+    },
+    "Branch": {
+      "title": "Branch",
+      "description": "Business branch location",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "address": { "type": "string" },
+        "phone": { "type": "string" },
+        "mainBranch": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "address", "phone", "mainBranch", "createdAt", "updatedAt"]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Inventory product scoped to user and branch",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "branchId": { "type": "string" },
+        "name": { "type": "string" },
+        "sku": { "type": "string" },
+        "category": { "type": "string" },
+        "costPrice": { "type": "number" },
+        "sellPrice": { "type": "number" },
+        "stockQty": { "type": "number" },
+        "minStockAlert": { "type": "number" },
+        "photoUri": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "branchId", "name", "sku", "category", "costPrice", "sellPrice", "stockQty", "minStockAlert", "createdAt", "updatedAt"]
+    },
+    "Party": {
+      "title": "Party",
+      "description": "Customer or supplier khata account",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "branchId": { "type": "string" },
+        "partyType": { "type": "string", "enum": ["CUSTOMER", "SUPPLIER"] },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "address": { "type": "string" },
+        "totalAmount": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "dueAmount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "branchId", "partyType", "name", "phone", "address", "totalAmount", "paidAmount", "dueAmount", "createdAt", "updatedAt"]
+    },
+    "TransactionRecord": {
+      "title": "TransactionRecord",
+      "description": "Sale, purchase, due collection, supplier payment, income, or expense entry",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "branchId": { "type": "string" },
+        "txType": { "type": "string", "enum": ["SALE", "PURCHASE", "DUE_COLLECTION", "SUPPLIER_PAYMENT", "INCOME", "EXPENSE"] },
+        "partyId": { "type": "string" },
+        "partyName": { "type": "string" },
+        "subtotal": { "type": "number" },
+        "discount": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "dueAmount": { "type": "number" },
+        "cogsTotal": { "type": "number" },
+        "category": { "type": "string" },
+        "note": { "type": "string" },
+        "status": { "type": "string", "enum": ["COMPLETED", "CANCELLED"] },
+        "operatorName": { "type": "string" },
+        "lineItemsJson": { "type": "string" },
+        "txDateMillis": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "branchId", "txType", "partyId", "partyName", "subtotal", "discount", "totalAmount", "paidAmount", "dueAmount", "cogsTotal", "category", "note", "status", "operatorName", "lineItemsJson", "txDateMillis", "createdAt", "updatedAt"]
+    },
+    "StockLog": {
+      "title": "StockLog",
+      "description": "Immutable inventory stock movement history",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "branchId": { "type": "string" },
+        "productId": { "type": "string" },
+        "productName": { "type": "string" },
+        "changeQty": { "type": "number" },
+        "reason": { "type": "string" },
+        "referenceTxId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "branchId", "productId", "productName", "changeQty", "reason", "referenceTxId", "createdAt"]
+    },
+    "Employee": {
+      "title": "Employee",
+      "description": "Employee profile and role-based permissions",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "phone": { "type": "string" },
+        "role": { "type": "string", "enum": ["MANAGER", "EMPLOYEE"] },
+        "pinCode": { "type": "string" },
+        "branchId": { "type": "string" },
+        "canSell": { "type": "boolean" },
+        "canPurchase": { "type": "boolean" },
+        "canViewReports": { "type": "boolean" },
+        "canManageStock": { "type": "boolean" },
+        "monthlySalary": { "type": "number" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "phone", "role", "pinCode", "branchId", "canSell", "canPurchase", "canViewReports", "canManageStock", "monthlySalary", "active", "createdAt", "updatedAt"]
+    },
+    "NotificationItem": {
+      "title": "NotificationItem",
+      "description": "Business and platform notifications",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "body": { "type": "string" },
+        "category": { "type": "string" },
+        "readFlag": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "body", "category", "readFlag", "createdAt"]
+    },
+    "SubscriptionPackage": {
+      "title": "SubscriptionPackage",
+      "description": "SaaS subscription tier configuration managed by Super Admin",
+      "type": "object",
+      "properties": {
+        "tier": { "type": "string", "enum": ["FREE", "BASIC", "PREMIUM", "BUSINESS"] },
+        "nameBn": { "type": "string" },
+        "nameEn": { "type": "string" },
+        "monthlyPriceBdt": { "type": "number" },
+        "maxBranches": { "type": "integer" },
+        "maxEmployees": { "type": "integer" },
+        "aiEnabled": { "type": "boolean" },
+        "exportEnabled": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["tier", "nameBn", "nameEn", "monthlyPriceBdt", "maxBranches", "maxEmployees", "aiEnabled", "exportEnabled", "updatedAt"]
+    },
+    "PaymentRequest": {
+      "title": "PaymentRequest",
+      "description": "Manual bKash/Nagad subscription payment verification request",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "shopName": { "type": "string" },
+        "method": { "type": "string", "enum": ["BKASH", "NAGAD"] },
+        "senderNumber": { "type": "string" },
+        "transactionId": { "type": "string" },
+        "amountBdt": { "type": "number" },
+        "packageTier": { "type": "string", "enum": ["BASIC", "PREMIUM", "BUSINESS"] },
+        "durationMonths": { "type": "integer" },
+        "screenshotUri": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
+        "adminNote": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userEmail", "shopName", "method", "senderNumber", "transactionId", "amountBdt", "packageTier", "durationMonths", "status", "adminNote", "createdAt", "updatedAt"]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Super Admin and Sub Admin RBAC assignments",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["SUPER_ADMIN", "SUB_ADMIN"] },
+        "canVerifyPayments": { "type": "boolean" },
+        "canManageUsers": { "type": "boolean" },
+        "canViewLimitedReports": { "type": "boolean" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "name", "role", "canVerifyPayments", "canManageUsers", "canViewLimitedReports", "active", "createdAt", "updatedAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable admin audit log",
+      "type": "object",
+      "properties": {
+        "actorUid": { "type": "string" },
+        "actorEmail": { "type": "string" },
+        "action": { "type": "string" },
+        "targetId": { "type": "string" },
+        "details": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["actorUid", "actorEmail", "action", "targetId", "details", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/business_accounts/{userId}": {
+      "schema": { "$ref": "#/entities/BusinessAccount" },
+      "description": "Business owner accounts and subscription statuses"
+    },
+    "/users/{userId}/branches/{branchId}": {
+      "schema": { "$ref": "#/entities/Branch" },
+      "description": "Owner-isolated branches"
+    },
+    "/users/{userId}/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Owner-isolated product inventory"
+    },
+    "/users/{userId}/parties/{partyId}": {
+      "schema": { "$ref": "#/entities/Party" },
+      "description": "Owner-isolated customer and supplier ledgers"
+    },
+    "/users/{userId}/transactions/{txId}": {
+      "schema": { "$ref": "#/entities/TransactionRecord" },
+      "description": "Owner-isolated sales, purchases, due collections, income, and expenses"
+    },
+    "/users/{userId}/stock_logs/{logId}": {
+      "schema": { "$ref": "#/entities/StockLog" },
+      "description": "Owner-isolated immutable stock movement logs"
+    },
+    "/users/{userId}/employees/{employeeId}": {
+      "schema": { "$ref": "#/entities/Employee" },
+      "description": "Owner-isolated staff RBAC definitions"
+    },
+    "/users/{userId}/notifications/{notifId}": {
+      "schema": { "$ref": "#/entities/NotificationItem" },
+      "description": "Owner-isolated notifications"
+    },
+    "/subscription_packages/{packageId}": {
+      "schema": { "$ref": "#/entities/SubscriptionPackage" },
+      "description": "SaaS subscription package tiers"
+    },
+    "/payment_requests/{requestId}": {
+      "schema": { "$ref": "#/entities/PaymentRequest" },
+      "description": "Manual bKash and Nagad subscription payment requests"
+    },
+    "/admins/{adminUid}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Super Admin and Sub Admin role records"
+    },
+    "/audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Immutable administrative audit logs"
+    }
+  }
+}

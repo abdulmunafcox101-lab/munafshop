@@ -1,0 +1,6 @@
+{
+  "name": "Munaf Shop",
+  "description": "Offline-first Business Accounting & Management Android app for Bangladeshi businesses with sales, purchases, customer/supplier khata ledgers, inventory, multi-branch, RBAC employees, SaaS subscriptions, voice accounting, and AI business assistant.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
