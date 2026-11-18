@@ -58,6 +58,7 @@ import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.BlockedAccountGate
 import com.example.ui.screens.BusinessProfileOnboardingScreen
 import com.example.ui.screens.DashboardScreen
+import com.example.ui.screens.FirebaseConfigMissingScreen
 import com.example.ui.screens.InventoryScreen
 import com.example.ui.screens.KhataLedgerScreen
 import com.example.ui.screens.MoreHubScreen
@@ -70,6 +71,7 @@ import com.example.ui.viewmodel.AdminSaasViewModel
 import com.example.ui.viewmodel.MainViewModel
 import com.example.util.VoiceServices
 import com.google.firebase.Firebase
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.auth
 import kotlinx.coroutines.launch
 
@@ -97,15 +99,28 @@ private fun MunafOnlineShopRoot() {
     val prefs = remember(context) { UserPreferences(context.applicationContext) }
     val language by prefs.languageFlow.collectAsStateWithLifecycle(initialValue = AppLanguage.BN)
     val themeMode by prefs.themeModeFlow.collectAsStateWithLifecycle(initialValue = AppThemeMode.SYSTEM)
-    val currentUser by remember { Firebase.auth.authStateFlow() }
-        .collectAsStateWithLifecycle(initialValue = Firebase.auth.currentUser)
-
-    val voiceServices = remember(context) { VoiceServices(context) }
-    DisposableEffect(voiceServices) {
-        onDispose { voiceServices.release() }
+    val isFirebaseInitialized = remember(context) {
+        FirebaseApp.getApps(context).isNotEmpty() ||
+            runCatching { FirebaseApp.initializeApp(context) != null }.getOrDefault(false)
     }
 
     MunafShopTheme(themeMode = themeMode) {
+        if (!isFirebaseInitialized) {
+            FirebaseConfigMissingScreen(
+                language = language,
+                onLanguageChange = { newLang -> scope.launch { prefs.setLanguage(newLang) } }
+            )
+            return@MunafShopTheme
+        }
+
+        val currentUser by remember { Firebase.auth.authStateFlow() }
+            .collectAsStateWithLifecycle(initialValue = Firebase.auth.currentUser)
+
+        val voiceServices = remember(context) { VoiceServices(context) }
+        DisposableEffect(voiceServices) {
+            onDispose { voiceServices.release() }
+        }
+
         val user = currentUser
         if (user == null) {
             AuthScreen(

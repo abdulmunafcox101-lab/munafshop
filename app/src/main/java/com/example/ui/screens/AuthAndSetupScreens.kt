@@ -569,3 +569,77 @@ fun BlockedAccountGate(
     }
 }
 
+@Composable
+fun FirebaseConfigMissingScreen(
+    language: AppLanguage,
+    onLanguageChange: (AppLanguage) -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .systemBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Row(
+                modifier = Modifier
+                    .widthIn(max = 520.dp)
+                    .fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                FilterChip(
+                    selected = language == AppLanguage.BN,
+                    onClick = { onLanguageChange(AppLanguage.BN) },
+                    label = { Text("বাংলা") }
+                )
+                Spacer(Modifier.width(6.dp))
+                FilterChip(
+                    selected = language == AppLanguage.EN,
+                    onClick = { onLanguageChange(AppLanguage.EN) },
+                    label = { Text("English") }
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+            Card(
+                modifier = Modifier
+                    .widthIn(max = 520.dp)
+                    .fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = tr(
+                            language,
+                            "Firebase কনফিগারেশন পাওয়া যায়নি",
+                            "Firebase Configuration Missing"
+                        ),
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = tr(
+                            language,
+                            "এই APK বিল্ডে app/google-services.json ফাইলটি যুক্ত ছিল না। Google সাইন-ইন ও Cloud Firestore চালু করতে আপনার GitHub রিপোজিটরির Settings > Secrets and variables > Actions এ GOOGLE_SERVICES_JSON নামে Secret যোগ করুন অথবা প্রাইভেট রিপোর app/ ফোল্ডারে google-services.json আপলোড করে পুনরায় বিল্ড করুন।",
+                            "This APK was built without app/google-services.json. Add GOOGLE_SERVICES_JSON under GitHub Repository Settings > Secrets and variables > Actions (or place google-services.json in app/ in your private repo) and re-run the build."
+                        ),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+            }
+        }
+    }
+}
+
+
