@@ -2,12 +2,15 @@ package com.example.firebase
 
 import android.app.Activity
 import android.content.Context
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
 import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
+import java.security.MessageDigest
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
@@ -28,6 +31,27 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 
 private const val TAG = "Auth"
+
+@Suppress("DEPRECATION")
+fun getAppSigningSha1(context: Context): String? = runCatching {
+    val pm = context.packageManager
+    val sigBytes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        val info = pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+        val signingInfo = info.signingInfo ?: return@runCatching null
+        val sig = if (signingInfo.hasMultipleSigners()) {
+            signingInfo.apkContentsSigners.firstOrNull()
+        } else {
+            signingInfo.signingCertificateHistory.firstOrNull()
+        }
+        sig?.toByteArray()
+    } else {
+        val info = pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES)
+        info.signatures?.firstOrNull()?.toByteArray()
+    } ?: return@runCatching null
+
+    val digest = MessageDigest.getInstance("SHA-1").digest(sigBytes)
+    digest.joinToString(":") { "%02X".format(it) }
+}.getOrNull()
 
 private fun resolveDefaultWebClientId(context: Context): String? {
     val resId = context.resources.getIdentifier(
@@ -141,7 +165,8 @@ fun onGoogleSignInClicked(
             onAuthCancelled()
         } catch (e: Exception) {
             Log.e(TAG, "Google Sign-In failed", e)
-            onAuthError(e.localizedMessage ?: "Sign in failed")
+            val detail = e.localizedMessage?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
+            onAuthError("${e.javaClass.simpleName}: $detail")
         }
     }
 }

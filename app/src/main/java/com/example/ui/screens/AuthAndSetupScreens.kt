@@ -56,9 +56,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -68,6 +70,7 @@ import com.example.R
 import com.example.data.model.AppLanguage
 import com.example.firebase.FirebaseRuntimeConfig
 import com.example.firebase.attemptAutoSignIn
+import com.example.firebase.getAppSigningSha1
 import com.example.firebase.onGoogleSignInClicked
 import com.example.i18n.Strings
 import com.example.i18n.tr
@@ -81,10 +84,13 @@ fun AuthScreen(
     onAuthSuccess: () -> Unit
 ) {
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
     val credentialManager = remember(context) { CredentialManager.create(context) }
+    val appSha1 = remember(context) { getAppSigningSha1(context) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var shaCopied by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         attemptAutoSignIn(
@@ -233,12 +239,39 @@ fun AuthScreen(
                         .padding(bottom = 12.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
                 ) {
-                    Text(
-                        text = errorMessage.orEmpty(),
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(12.dp)
-                    )
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = errorMessage.orEmpty(),
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        if (!appSha1.isNullOrBlank()) {
+                            Text(
+                                text = tr(
+                                    language,
+                                    "এই APK-র SHA-1: $appSha1\nGitHub থেকে তৈরি APK-তে সাইন-ইন না হলে Firebase Console > Project Settings > Your apps (${context.packageName}) > Add fingerprint-এ এই SHA-1 যোগ করুন।",
+                                    "APK SHA-1: $appSha1\nIf Google Sign-In fails on a GitHub-built APK, add this SHA-1 in Firebase Console > Project Settings > Your apps (${context.packageName}) > Add fingerprint."
+                                ),
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                            OutlinedButton(
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(appSha1))
+                                    shaCopied = true
+                                },
+                                modifier = Modifier.testTag("copy_sha1_button")
+                            ) {
+                                Text(
+                                    if (shaCopied) tr(language, "SHA-1 কপি হয়েছে", "SHA-1 Copied")
+                                    else tr(language, "SHA-1 কপি করুন", "Copy SHA-1")
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
