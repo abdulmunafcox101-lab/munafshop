@@ -18,6 +18,7 @@ import com.example.data.model.AppThemeMode
 import com.example.data.model.EmployeeRole
 import com.example.data.model.PartyType
 import com.example.data.model.ReportPeriod
+import com.example.data.model.SubscriptionEngine
 import com.example.data.model.SubscriptionPackageDoc
 import com.example.data.model.SubscriptionTier
 import com.example.data.model.SyncStatus
@@ -301,26 +302,56 @@ class MainViewModel(
         }
     }
 
-    fun activeTier(packages: List<SubscriptionPackageDoc>): SubscriptionPackageDoc {
+    fun activeTier(
+        packages: List<SubscriptionPackageDoc>,
+        serverNowMillis: Long = System.currentTimeMillis()
+    ): SubscriptionPackageDoc {
         val profile = uiState.value.profile
-        val tierName = if (profile == null) {
-            SubscriptionTier.FREE.name
-        } else {
-            val expired = profile.subscriptionTier != SubscriptionTier.FREE.name &&
-                profile.subscriptionExpiresAtMillis > 0L &&
-                System.currentTimeMillis() > profile.subscriptionExpiresAtMillis
-            if (expired) SubscriptionTier.FREE.name else profile.subscriptionTier
-        }
-        return packages.firstOrNull { it.tier == tierName } ?: SubscriptionPackageDoc(
-            tier = SubscriptionTier.FREE.name,
-            nameBn = SubscriptionTier.FREE.nameBn,
-            nameEn = SubscriptionTier.FREE.nameEn,
-            monthlyPriceBdt = 0.0,
-            maxBranches = 1L,
-            maxEmployees = 1L,
-            aiEnabled = false,
-            exportEnabled = false
+        return SubscriptionEngine.resolveActivePackage(
+            tierName = profile?.subscriptionTier,
+            expiresAtMillis = profile?.subscriptionExpiresAtMillis ?: 0L,
+            serverNowMillis = serverNowMillis,
+            packages = packages
         )
+    }
+
+    fun evaluateSubscriptionExpiryAlerts(serverNowMillis: Long) {
+        val profile = uiState.value.profile ?: return
+        if (profile.subscriptionTier == SubscriptionTier.FREE.name) return
+        val countdown = SubscriptionEngine.computeCountdown(
+            tierName = profile.subscriptionTier,
+            startMillis = profile.subscriptionStartMillis,
+            expiresAtMillis = profile.subscriptionExpiresAtMillis,
+            serverNowMillis = serverNowMillis
+        )
+        val triggered = SubscriptionEngine.evaluateExpiryReminderThreshold(
+            countdown = countdown,
+            lastNotifiedThreshold = profile.lastExpiryWarningDays
+        ) ?: return
+
+        viewModelScope.launch {
+            repository.saveBusinessProfile(profile.copy(lastExpiryWarningDays = triggered))
+            val isBn = uiState.value.language == AppLanguage.BN
+            val (title, body) = if (triggered == -1) {
+                if (isBn) {
+                    "সাবস্ক্রিপশনের মেয়াদ শেষ হয়েছে" to "আপনার ${profile.subscriptionTier} প্ল্যানের মেয়াদ শেষ হওয়ায় ফ্রি প্ল্যানে নেমেছে। পূর্বের সকল হিসাব সুরক্ষিত আছে।"
+                } else {
+                    "Subscription Expired" to "Your ${profile.subscriptionTier} plan expired and downgraded to Free. All historical accounting data remains safe."
+                }
+            } else {
+                if (isBn) {
+                    "মেয়াদ শেষের সতর্কতা ($triggered দিন বাকি)" to "আপনার ${profile.subscriptionTier} প্যাকেজের মেয়াদ মাত্র $triggered দিন (বা কম) বাকি। সময়মতো নবায়ন করুন।"
+                } else {
+                    "Subscription Expiring ($triggered Day(s) Left)" to "Your ${profile.subscriptionTier} plan expires in $triggered day(s) or less. Renew to keep paid features."
+                }
+            }
+            repository.addLocalNotification(
+                userId = currentUserId,
+                title = title,
+                body = body,
+                category = "SUBSCRIPTION_EXPIRY"
+            )
+        }
     }
 
     fun saveBusinessProfile(
@@ -344,8 +375,13 @@ class MainViewModel(
                 logoUri = logoUri ?: existing?.logoUri,
                 subscriptionTier = existing?.subscriptionTier ?: SubscriptionTier.FREE.name,
                 subscriptionMonths = existing?.subscriptionMonths ?: 0,
+                subscriptionStartMillis = existing?.subscriptionStartMillis ?: 0L,
                 subscriptionExpiresAtMillis = existing?.subscriptionExpiresAtMillis ?: 0L,
-                blocked = existing?.blocked ?: false
+                blocked = existing?.blocked ?: false,
+                accountStatus = existing?.accountStatus ?: "ACTIVE",
+                banReason = existing?.banReason ?: "",
+                suspendedUntilMillis = existing?.suspendedUntilMillis ?: 0L,
+                lastExpiryWarningDays = existing?.lastExpiryWarningDays ?: 0
             )
             repository.saveBusinessProfile(profile)
             _toastMessage.value = if (uiState.value.language == AppLanguage.BN) {

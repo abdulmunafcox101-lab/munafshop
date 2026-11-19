@@ -103,3 +103,39 @@ enum class ReportPeriod(val labelBn: String, val labelEn: String) {
     YEAR("বছর", "Year"),
     ALL("সব", "All Time")
 }
+
+enum class ComplaintStatus(val labelBn: String, val labelEn: String) {
+    PENDING("অপেক্ষমান", "Pending"),
+    IN_PROGRESS("চলমান", "In Progress"),
+    RESOLVED("সমাধান হয়েছে", "Resolved"),
+    REJECTED("বাতিল", "Rejected");
+
+    companion object {
+        fun fromName(raw: String?): ComplaintStatus = entries.firstOrNull { it.name == raw } ?: PENDING
+    }
+}
+
+enum class AccountModerationStatus(val labelBn: String, val labelEn: String) {
+    ACTIVE("সক্রিয়", "Active"),
+    SUSPENDED("সাময়িক স্থগিত", "Suspended"),
+    BANNED("স্থায়ী ব্যান", "Banned");
+
+    companion object {
+        fun fromName(raw: String?, blockedFallback: Boolean = false): AccountModerationStatus {
+            val found = entries.firstOrNull { it.name == raw }
+            if (found != null) return found
+            return if (blockedFallback) BANNED else ACTIVE
+        }
+    }
+}
+
+enum class EmailOutboxStatus(val labelBn: String, val labelEn: String) {
+    PENDING_BACKEND_CONFIG("ব্যাকএন্ড সেটআপ বাকি", "Pending Backend Service"),
+    SENT("পাঠানো হয়েছে", "Sent"),
+    FAILED("ব্যর্থ", "Failed");
+
+    companion object {
+        fun fromName(raw: String?): EmailOutboxStatus =
+            entries.firstOrNull { it.name == raw } ?: PENDING_BACKEND_CONFIG
+    }
+}

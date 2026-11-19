@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material.icons.filled.WorkspacePremium
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -99,6 +100,7 @@ fun MoreHubScreen(
     voiceServices: VoiceServices,
     onOpenReports: () -> Unit,
     onOpenSubscription: () -> Unit,
+    onOpenComplaints: () -> Unit,
     onOpenAiAssistant: () -> Unit,
     onOpenVoiceAccounting: () -> Unit,
     onOpenAdminPanel: () -> Unit,
@@ -190,6 +192,8 @@ fun MoreHubScreen(
                     HubRow(Icons.Default.BarChart, Strings.reports(lang), tr(lang, "লাভ-ক্ষতি, ক্যাশ ফ্লো, PDF ও Excel", "P&L, Cash Flow, PDF & Excel"), "hub_reports_row", onOpenReports)
                     HorizontalDivider()
                     HubRow(Icons.Default.WorkspacePremium, tr(lang, "সাবস্ক্রিপশন ও পেমেন্ট", "Subscription & Payment"), "${activePackage.nameBn} / ${activePackage.nameEn}", "hub_subscription_row", onOpenSubscription)
+                    HorizontalDivider()
+                    HubRow(Icons.Default.SupportAgent, tr(lang, "সহায়তা ও অভিযোগ", "Support & Complaints"), tr(lang, "টিকিট জমা ও সমাধান ট্র্যাক করুন", "Submit tickets & track admin replies"), "hub_complaints_row", onOpenComplaints)
                     HorizontalDivider()
                     HubRow(Icons.Default.AutoAwesome, Strings.aiAssistant(lang), tr(lang, "AI দিয়ে ব্যবসার হিসাব বিশ্লেষণ", "Ask AI about your sales & due"), "hub_ai_row", onOpenAiAssistant)
                     HorizontalDivider()

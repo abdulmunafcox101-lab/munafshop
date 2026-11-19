@@ -2,7 +2,7 @@
   "entities": {
     "BusinessAccount": {
       "title": "BusinessAccount",
-      "description": "Business owner profile, subscription tier, and account status",
+      "description": "Business owner profile, subscription tier, countdown timestamps, and moderation status",
       "type": "object",
       "properties": {
         "userId": { "type": "string", "description": "Owner Firebase Auth UID" },
@@ -15,8 +15,12 @@
         "logoUri": { "type": "string", "description": "Local or remote logo URI" },
         "subscriptionTier": { "type": "string", "enum": ["FREE", "BASIC", "PREMIUM", "BUSINESS"] },
         "subscriptionMonths": { "type": "integer" },
+        "subscriptionStartMillis": { "type": "integer" },
         "subscriptionExpiresAtMillis": { "type": "integer" },
         "blocked": { "type": "boolean" },
+        "accountStatus": { "type": "string", "enum": ["ACTIVE", "SUSPENDED", "BANNED"] },
+        "banReason": { "type": "string" },
+        "suspendedUntilMillis": { "type": "integer" },
         "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp" },
         "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp" }
       },
@@ -155,26 +159,94 @@
       },
       "required": ["userId", "title", "body", "category", "readFlag", "createdAt"]
     },
+    "ServerClockSync": {
+      "title": "ServerClockSync",
+      "description": "Server timestamp heartbeat for tamper-resistant subscription countdown verification",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "serverTime": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "serverTime"]
+    },
     "SubscriptionPackage": {
       "title": "SubscriptionPackage",
-      "description": "SaaS subscription tier configuration managed by Super Admin",
+      "description": "SaaS subscription tier configuration with per-duration pricing managed by Super Admin",
       "type": "object",
       "properties": {
         "tier": { "type": "string", "enum": ["FREE", "BASIC", "PREMIUM", "BUSINESS"] },
         "nameBn": { "type": "string" },
         "nameEn": { "type": "string" },
         "monthlyPriceBdt": { "type": "number" },
+        "price1mBdt": { "type": "number" },
+        "price3mBdt": { "type": "number" },
+        "price6mBdt": { "type": "number" },
+        "price12mBdt": { "type": "number" },
         "maxBranches": { "type": "integer" },
         "maxEmployees": { "type": "integer" },
         "aiEnabled": { "type": "boolean" },
         "exportEnabled": { "type": "boolean" },
+        "enabled": { "type": "boolean" },
+        "featuresSummaryBn": { "type": "string" },
+        "featuresSummaryEn": { "type": "string" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["tier", "nameBn", "nameEn", "monthlyPriceBdt", "maxBranches", "maxEmployees", "aiEnabled", "exportEnabled", "updatedAt"]
     },
+    "PackagePriceHistory": {
+      "title": "PackagePriceHistory",
+      "description": "Immutable package pricing and feature change history log",
+      "type": "object",
+      "properties": {
+        "tier": { "type": "string" },
+        "actorUid": { "type": "string" },
+        "actorEmail": { "type": "string" },
+        "previousMonthlyBdt": { "type": "number" },
+        "newMonthlyBdt": { "type": "number" },
+        "price1mBdt": { "type": "number" },
+        "price3mBdt": { "type": "number" },
+        "price6mBdt": { "type": "number" },
+        "price12mBdt": { "type": "number" },
+        "maxBranches": { "type": "integer" },
+        "maxEmployees": { "type": "integer" },
+        "packageEnabled": { "type": "boolean" },
+        "summary": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["tier", "actorUid", "actorEmail", "previousMonthlyBdt", "newMonthlyBdt", "summary", "createdAt"]
+    },
+    "PaymentSettings": {
+      "title": "PaymentSettings",
+      "description": "Dynamic bKash and Nagad merchant payment settings controlled by Super Admin",
+      "type": "object",
+      "properties": {
+        "bkashAccountName": { "type": "string" },
+        "bkashNumber": { "type": "string" },
+        "bkashEnabled": { "type": "boolean" },
+        "nagadAccountName": { "type": "string" },
+        "nagadNumber": { "type": "string" },
+        "nagadEnabled": { "type": "boolean" },
+        "instructionsBn": { "type": "string" },
+        "instructionsEn": { "type": "string" },
+        "updatedByEmail": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["bkashAccountName", "bkashNumber", "bkashEnabled", "nagadAccountName", "nagadNumber", "nagadEnabled", "instructionsBn", "instructionsEn", "updatedAt"]
+    },
+    "TrxRegistryEntry": {
+      "title": "TrxRegistryEntry",
+      "description": "Global duplicate transaction ID lock entry",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "trxKey": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "trxKey", "createdAt"]
+    },
     "PaymentRequest": {
       "title": "PaymentRequest",
-      "description": "Manual bKash/Nagad subscription payment verification request",
+      "description": "Manual bKash/Nagad subscription payment verification request with locked-in pricing",
       "type": "object",
       "properties": {
         "userId": { "type": "string" },
@@ -184,15 +256,106 @@
         "senderNumber": { "type": "string" },
         "transactionId": { "type": "string" },
         "amountBdt": { "type": "number" },
+        "lockedUnitMonthlyBdt": { "type": "number" },
         "packageTier": { "type": "string", "enum": ["BASIC", "PREMIUM", "BUSINESS"] },
         "durationMonths": { "type": "integer" },
         "screenshotUri": { "type": "string" },
         "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
         "adminNote": { "type": "string" },
+        "reviewedByEmail": { "type": "string" },
+        "reviewedAtMillis": { "type": "integer" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "userEmail", "shopName", "method", "senderNumber", "transactionId", "amountBdt", "packageTier", "durationMonths", "status", "adminNote", "createdAt", "updatedAt"]
+    },
+    "SubscriptionRenewal": {
+      "title": "SubscriptionRenewal",
+      "description": "Immutable subscription activation and renewal ledger",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "shopName": { "type": "string" },
+        "paymentRequestId": { "type": "string" },
+        "packageTier": { "type": "string", "enum": ["BASIC", "PREMIUM", "BUSINESS"] },
+        "durationMonths": { "type": "integer" },
+        "amountBdt": { "type": "number" },
+        "startedAtMillis": { "type": "integer" },
+        "expiresAtMillis": { "type": "integer" },
+        "approvedByEmail": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "paymentRequestId", "packageTier", "durationMonths", "amountBdt", "startedAtMillis", "expiresAtMillis", "approvedByEmail", "createdAt"]
+    },
+    "ComplaintTicket": {
+      "title": "ComplaintTicket",
+      "description": "Customer complaint and support ticket",
+      "type": "object",
+      "properties": {
+        "ticketCode": { "type": "string" },
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "shopName": { "type": "string" },
+        "subject": { "type": "string" },
+        "description": { "type": "string" },
+        "attachmentUri": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "IN_PROGRESS", "RESOLVED", "REJECTED"] },
+        "lastReplyText": { "type": "string" },
+        "lastReplyBy": { "type": "string" },
+        "lastReplyAtMillis": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ticketCode", "userId", "userEmail", "shopName", "subject", "description", "status", "createdAt", "updatedAt"]
+    },
+    "ComplaintReply": {
+      "title": "ComplaintReply",
+      "description": "Timestamped reply message inside a complaint ticket thread",
+      "type": "object",
+      "properties": {
+        "ticketId": { "type": "string" },
+        "senderUid": { "type": "string" },
+        "senderName": { "type": "string" },
+        "senderRole": { "type": "string", "enum": ["CUSTOMER", "SUPER_ADMIN", "SUB_ADMIN"] },
+        "message": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["ticketId", "senderUid", "senderName", "senderRole", "message", "createdAt"]
+    },
+    "ModerationHistory": {
+      "title": "ModerationHistory",
+      "description": "Immutable suspend, ban, and unban history with mandatory reason",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "shopName": { "type": "string" },
+        "action": { "type": "string", "enum": ["SUSPEND", "BAN", "UNBAN"] },
+        "reason": { "type": "string" },
+        "suspendedUntilMillis": { "type": "integer" },
+        "actorUid": { "type": "string" },
+        "actorEmail": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "action", "reason", "actorUid", "actorEmail", "createdAt"]
+    },
+    "EmailOutbox": {
+      "title": "EmailOutbox",
+      "description": "Server-side email dispatch queue awaiting backend SMTP/Trigger Email integration",
+      "type": "object",
+      "properties": {
+        "recipientEmail": { "type": "string" },
+        "emailType": { "type": "string", "enum": ["ORDER_ALERT_OWNER", "PAYMENT_APPROVED", "PAYMENT_REJECTED", "COMPLAINT_REPLY"] },
+        "subject": { "type": "string" },
+        "bodyPreview": { "type": "string" },
+        "relatedUserId": { "type": "string" },
+        "relatedOrderId": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING_BACKEND_CONFIG", "SENT", "FAILED"] },
+        "statusNote": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["recipientEmail", "emailType", "subject", "bodyPreview", "relatedUserId", "status", "createdAt"]
     },
     "AdminUser": {
       "title": "AdminUser",
@@ -205,6 +368,7 @@
         "role": { "type": "string", "enum": ["SUPER_ADMIN", "SUB_ADMIN"] },
         "canVerifyPayments": { "type": "boolean" },
         "canManageUsers": { "type": "boolean" },
+        "canReplyComplaints": { "type": "boolean" },
         "canViewLimitedReports": { "type": "boolean" },
         "active": { "type": "boolean" },
         "createdAt": { "type": "string", "format": "date-time" },
@@ -260,13 +424,49 @@
       "schema": { "$ref": "#/entities/NotificationItem" },
       "description": "Owner-isolated notifications"
     },
+    "/users/{userId}/clock_sync/{syncId}": {
+      "schema": { "$ref": "#/entities/ServerClockSync" },
+      "description": "Owner server timestamp heartbeat for tamper-resistant subscription expiry checks"
+    },
     "/subscription_packages/{packageId}": {
       "schema": { "$ref": "#/entities/SubscriptionPackage" },
       "description": "SaaS subscription package tiers"
     },
+    "/package_price_history/{historyId}": {
+      "schema": { "$ref": "#/entities/PackagePriceHistory" },
+      "description": "Package pricing and feature change history log"
+    },
+    "/app_config/{configId}": {
+      "schema": { "$ref": "#/entities/PaymentSettings" },
+      "description": "Global bKash/Nagad payment settings configured by Super Admin"
+    },
+    "/trx_registry/{trxKey}": {
+      "schema": { "$ref": "#/entities/TrxRegistryEntry" },
+      "description": "Global unique Transaction ID registry preventing duplicate payment TrxIDs"
+    },
     "/payment_requests/{requestId}": {
       "schema": { "$ref": "#/entities/PaymentRequest" },
       "description": "Manual bKash and Nagad subscription payment requests"
+    },
+    "/subscription_renewals/{renewalId}": {
+      "schema": { "$ref": "#/entities/SubscriptionRenewal" },
+      "description": "Immutable subscription activation and renewal history"
+    },
+    "/complaints/{ticketId}": {
+      "schema": { "$ref": "#/entities/ComplaintTicket" },
+      "description": "Customer complaints and support tickets"
+    },
+    "/complaints/{ticketId}/replies/{replyId}": {
+      "schema": { "$ref": "#/entities/ComplaintReply" },
+      "description": "Complaint reply thread messages"
+    },
+    "/moderation_history/{historyId}": {
+      "schema": { "$ref": "#/entities/ModerationHistory" },
+      "description": "Suspend, Ban, and Unban moderation history"
+    },
+    "/email_outbox/{mailId}": {
+      "schema": { "$ref": "#/entities/EmailOutbox" },
+      "description": "Email outbox queue awaiting backend SMTP/Trigger Email configuration"
     },
     "/admins/{adminUid}": {
       "schema": { "$ref": "#/entities/AdminUser" },

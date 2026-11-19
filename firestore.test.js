@@ -398,3 +398,216 @@ test("Email spoofing test and Super Admin / Sub Admin payment approval flow", as
   );
   await assertSucceeds(superAdminDb.collection("audit_logs").get());
 });
+
+test("Global Duplicate TrxID prevention & mandatory Rejection reason", async () => {
+  const ts = nowPast();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID, { email: "alice@example.com", email_verified: true }).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID, { email: "bob@example.com", email_verified: true }).firestore();
+  const superAdminDb = testEnv.authenticatedContext(SUPER_ADMIN_UID, { email: SUPER_ADMIN_EMAIL, email_verified: true }).firestore();
+
+  // Alice registers TrxID TRX999888
+  await assertSucceeds(
+    aliceDb.collection("trx_registry").doc("TRX999888").set({
+      userId: ALICE_UID,
+      trxKey: "TRX999888",
+      createdAt: ts,
+    })
+  );
+
+  // Bob CANNOT re-use or overwrite TRX999888 globally
+  await assertFails(
+    bobDb.collection("trx_registry").doc("TRX999888").set({
+      userId: BOB_UID,
+      trxKey: "TRX999888",
+      createdAt: nowPast(),
+    })
+  );
+  // Bob CANNOT snoop trx_registry either
+  await assertFails(bobDb.collection("trx_registry").doc("TRX999888").get());
+
+  // Bob submits a fresh order
+  await assertSucceeds(
+    bobDb.collection("payment_requests").doc("pay_bob_1").set({
+      userId: BOB_UID,
+      userEmail: "bob@example.com",
+      shopName: "Bob Mart",
+      method: "NAGAD",
+      senderNumber: "01811000000",
+      transactionId: "NGD776655",
+      amountBdt: 599,
+      lockedUnitMonthlyBdt: 599,
+      packageTier: "PREMIUM",
+      durationMonths: 1,
+      status: "PENDING",
+      adminNote: "",
+      reviewedByEmail: "",
+      reviewedAtMillis: 0,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  // Rejecting WITHOUT a reason must FAIL
+  await assertFails(
+    superAdminDb.collection("payment_requests").doc("pay_bob_1").update({
+      status: "REJECTED",
+      adminNote: "",
+      reviewedByEmail: SUPER_ADMIN_EMAIL,
+      reviewedAtMillis: Date.now(),
+      updatedAt: nowPast(),
+    })
+  );
+
+  // Rejecting WITH a valid reason succeeds
+  await assertSucceeds(
+    superAdminDb.collection("payment_requests").doc("pay_bob_1").update({
+      status: "REJECTED",
+      adminNote: "Transaction ID not matched in Nagad statement",
+      reviewedByEmail: SUPER_ADMIN_EMAIL,
+      reviewedAtMillis: Date.now(),
+      updatedAt: nowPast(),
+    })
+  );
+});
+
+test("Complaints, Moderation with reason, Payment Settings, Price History & Email Outbox RBAC", async () => {
+  const ts = nowPast();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID, { email: "alice@example.com", email_verified: true }).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID, { email: "bob@example.com", email_verified: true }).firestore();
+  const subAdminDb = testEnv.authenticatedContext(SUB_ADMIN_UID, { email: "support@munafshop.com", email_verified: true }).firestore();
+  const superAdminDb = testEnv.authenticatedContext(SUPER_ADMIN_UID, { email: SUPER_ADMIN_EMAIL, email_verified: true }).firestore();
+
+  // Super Admin saves bKash/Nagad payment settings; Sub-Admin and customers cannot mutate
+  await assertSucceeds(
+    superAdminDb.collection("app_config").doc("payment_settings").set({
+      bkashAccountName: "MUNAF SHOP",
+      bkashNumber: "01712345678",
+      bkashEnabled: true,
+      nagadAccountName: "MUNAF SHOP",
+      nagadNumber: "01812345678",
+      nagadEnabled: true,
+      instructionsBn: "Send money করে TrxID দিন",
+      instructionsEn: "Send money and submit TrxID",
+      updatedByEmail: SUPER_ADMIN_EMAIL,
+      updatedAt: ts,
+    })
+  );
+  await assertSucceeds(aliceDb.collection("app_config").doc("payment_settings").get());
+  await assertFails(
+    aliceDb.collection("app_config").doc("payment_settings").update({ bkashNumber: "01900000000", updatedAt: nowPast() })
+  );
+
+  // Super Admin creates Sub-Admin with canReplyComplaints=true
+  await assertSucceeds(
+    superAdminDb.collection("admins").doc(SUB_ADMIN_UID).set({
+      uid: SUB_ADMIN_UID,
+      email: "support@munafshop.com",
+      name: "Support Officer",
+      role: "SUB_ADMIN",
+      canVerifyPayments: true,
+      canManageUsers: false,
+      canReplyComplaints: true,
+      canViewLimitedReports: true,
+      active: true,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+
+  // Sub-Admin CANNOT self-elevate to SUPER_ADMIN or read package_price_history / email_outbox
+  await assertFails(
+    subAdminDb.collection("admins").doc(SUB_ADMIN_UID).update({ role: "SUPER_ADMIN", updatedAt: nowPast() })
+  );
+  await assertFails(subAdminDb.collection("package_price_history").get());
+  await assertFails(subAdminDb.collection("email_outbox").get());
+
+  // Customer Alice creates a complaint
+  await assertSucceeds(
+    aliceDb.collection("complaints").doc("tkt_1").set({
+      ticketCode: "TKT-100200",
+      userId: ALICE_UID,
+      userEmail: "alice@example.com",
+      shopName: "Alice Store",
+      subject: "Sync issue",
+      description: "Payment took time to confirm",
+      status: "PENDING",
+      lastReplyText: "",
+      lastReplyBy: "",
+      lastReplyAtMillis: 0,
+      createdAt: ts,
+      updatedAt: ts,
+    })
+  );
+  // Bob cannot read Alice's complaint; Alice cannot resolve her own complaint
+  await assertFails(bobDb.collection("complaints").doc("tkt_1").get());
+  await assertFails(
+    aliceDb.collection("complaints").doc("tkt_1").update({ status: "RESOLVED", updatedAt: nowPast() })
+  );
+
+  // Sub-Admin with canReplyComplaints CAN reply and mark IN_PROGRESS / RESOLVED
+  await assertSucceeds(
+    subAdminDb.collection("complaints").doc("tkt_1").collection("replies").doc("rep_1").set({
+      ticketId: "tkt_1",
+      senderUid: SUB_ADMIN_UID,
+      senderName: "Support Officer",
+      senderRole: "SUB_ADMIN",
+      message: "Checking your TrxID now.",
+      createdAt: nowPast(),
+    })
+  );
+  await assertSucceeds(
+    subAdminDb.collection("complaints").doc("tkt_1").update({
+      status: "IN_PROGRESS",
+      lastReplyText: "Checking your TrxID now.",
+      lastReplyBy: "Support Officer",
+      lastReplyAtMillis: Date.now(),
+      updatedAt: nowPast(),
+    })
+  );
+
+  // Moderation without reason FAILS, with reason SUCCEEDS
+  await assertFails(
+    superAdminDb.collection("moderation_history").doc("mod_1").set({
+      userId: ALICE_UID,
+      userEmail: "alice@example.com",
+      shopName: "Alice Store",
+      action: "BAN",
+      reason: "",
+      suspendedUntilMillis: 0,
+      actorUid: SUPER_ADMIN_UID,
+      actorEmail: SUPER_ADMIN_EMAIL,
+      createdAt: nowPast(),
+    })
+  );
+  await assertSucceeds(
+    superAdminDb.collection("moderation_history").doc("mod_1").set({
+      userId: ALICE_UID,
+      userEmail: "alice@example.com",
+      shopName: "Alice Store",
+      action: "BAN",
+      reason: "Fake TrxID submitted repeatedly",
+      suspendedUntilMillis: 0,
+      actorUid: SUPER_ADMIN_UID,
+      actorEmail: SUPER_ADMIN_EMAIL,
+      createdAt: nowPast(),
+    })
+  );
+
+  // Alice queues an owner email alert on payment order; only Super Admin can list email_outbox
+  await assertSucceeds(
+    aliceDb.collection("email_outbox").doc("mail_1").set({
+      recipientEmail: SUPER_ADMIN_EMAIL,
+      emailType: "ORDER_ALERT_OWNER",
+      subject: "New BASIC 1m Order",
+      bodyPreview: "Shop Alice Store paid 299 BDT",
+      relatedUserId: ALICE_UID,
+      relatedOrderId: "pay_1",
+      status: "PENDING_BACKEND_CONFIG",
+      statusNote: "Pending backend SMTP config",
+      createdAt: nowPast(),
+    })
+  );
+  await assertFails(aliceDb.collection("email_outbox").get());
+  await assertSucceeds(superAdminDb.collection("email_outbox").get());
+});
+

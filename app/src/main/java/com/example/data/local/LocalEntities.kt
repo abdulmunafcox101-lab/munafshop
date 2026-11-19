@@ -18,8 +18,13 @@ data class BusinessProfileEntity(
     val logoUri: String? = null,
     val subscriptionTier: String = "FREE",
     val subscriptionMonths: Int = 0,
+    val subscriptionStartMillis: Long = 0L,
     val subscriptionExpiresAtMillis: Long = 0L,
     val blocked: Boolean = false,
+    val accountStatus: String = "ACTIVE",
+    val banReason: String = "",
+    val suspendedUntilMillis: Long = 0L,
+    val lastExpiryWarningDays: Int = 0,
     val syncStatus: String = SyncStatus.PENDING.name,
     val updatedAtMillis: Long = System.currentTimeMillis()
 )

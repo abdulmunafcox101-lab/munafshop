@@ -74,6 +74,15 @@ service cloud.firestore {
       );
     }
 
+    function isComplaintAdmin() {
+      return isSuperAdmin() || (
+        isSignedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true &&
+        get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.canReplyComplaints == true
+      );
+    }
+
     // 3. Entity Validation Blueprints
     function isValidBusinessAccount(data) {
       return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
@@ -86,8 +95,12 @@ service cloud.firestore {
              (!('logoUri' in data) || (data.logoUri is string && data.logoUri.size() <= 1000)) &&
              data.subscriptionTier in ['FREE', 'BASIC', 'PREMIUM', 'BUSINESS'] &&
              data.subscriptionMonths is int && data.subscriptionMonths >= 0 && data.subscriptionMonths <= 120 &&
+             (!('subscriptionStartMillis' in data) || (data.subscriptionStartMillis is int && data.subscriptionStartMillis >= 0)) &&
              data.subscriptionExpiresAtMillis is int && data.subscriptionExpiresAtMillis >= 0 &&
-             data.blocked is bool;
+             data.blocked is bool &&
+             (!('accountStatus' in data) || data.accountStatus in ['ACTIVE', 'SUSPENDED', 'BANNED']) &&
+             (!('banReason' in data) || (data.banReason is string && data.banReason.size() <= 400)) &&
+             (!('suspendedUntilMillis' in data) || (data.suspendedUntilMillis is int && data.suspendedUntilMillis >= 0));
     }
 
     function isValidBranch(data) {
@@ -181,10 +194,29 @@ service cloud.firestore {
              data.nameBn is string && data.nameBn.size() >= 1 && data.nameBn.size() <= 60 &&
              data.nameEn is string && data.nameEn.size() >= 1 && data.nameEn.size() <= 60 &&
              data.monthlyPriceBdt is number && data.monthlyPriceBdt >= 0 &&
+             (!('price1mBdt' in data) || (data.price1mBdt is number && data.price1mBdt >= 0)) &&
+             (!('price3mBdt' in data) || (data.price3mBdt is number && data.price3mBdt >= 0)) &&
+             (!('price6mBdt' in data) || (data.price6mBdt is number && data.price6mBdt >= 0)) &&
+             (!('price12mBdt' in data) || (data.price12mBdt is number && data.price12mBdt >= 0)) &&
              data.maxBranches is int && data.maxBranches >= 1 &&
              data.maxEmployees is int && data.maxEmployees >= 0 &&
              data.aiEnabled is bool &&
-             data.exportEnabled is bool;
+             data.exportEnabled is bool &&
+             (!('enabled' in data) || data.enabled is bool) &&
+             (!('featuresSummaryBn' in data) || (data.featuresSummaryBn is string && data.featuresSummaryBn.size() <= 400)) &&
+             (!('featuresSummaryEn' in data) || (data.featuresSummaryEn is string && data.featuresSummaryEn.size() <= 400));
+    }
+
+    function isValidPaymentSettings(data) {
+      return data.bkashAccountName is string && data.bkashAccountName.size() >= 1 && data.bkashAccountName.size() <= 120 &&
+             data.bkashNumber is string && data.bkashNumber.size() >= 5 && data.bkashNumber.size() <= 30 &&
+             data.bkashEnabled is bool &&
+             data.nagadAccountName is string && data.nagadAccountName.size() >= 1 && data.nagadAccountName.size() <= 120 &&
+             data.nagadNumber is string && data.nagadNumber.size() >= 5 && data.nagadNumber.size() <= 30 &&
+             data.nagadEnabled is bool &&
+             data.instructionsBn is string && data.instructionsBn.size() <= 500 &&
+             data.instructionsEn is string && data.instructionsEn.size() <= 500 &&
+             (!('updatedByEmail' in data) || (data.updatedByEmail is string && data.updatedByEmail.size() <= 200));
     }
 
     function isValidPaymentRequest(data) {
@@ -195,11 +227,36 @@ service cloud.firestore {
              data.senderNumber is string && data.senderNumber.size() >= 6 && data.senderNumber.size() <= 25 &&
              data.transactionId is string && data.transactionId.size() >= 4 && data.transactionId.size() <= 64 &&
              data.amountBdt is number && data.amountBdt > 0 &&
+             (!('lockedUnitMonthlyBdt' in data) || (data.lockedUnitMonthlyBdt is number && data.lockedUnitMonthlyBdt >= 0)) &&
              data.packageTier in ['BASIC', 'PREMIUM', 'BUSINESS'] &&
              data.durationMonths in [1, 3, 6, 12] &&
              (!('screenshotUri' in data) || (data.screenshotUri is string && data.screenshotUri.size() <= 1000)) &&
              data.status in ['PENDING', 'APPROVED', 'REJECTED'] &&
-             data.adminNote is string && data.adminNote.size() <= 300;
+             data.adminNote is string && data.adminNote.size() <= 300 &&
+             (!('reviewedByEmail' in data) || (data.reviewedByEmail is string && data.reviewedByEmail.size() <= 200)) &&
+             (!('reviewedAtMillis' in data) || (data.reviewedAtMillis is int && data.reviewedAtMillis >= 0));
+    }
+
+    function isValidComplaintTicket(data) {
+      return data.ticketCode is string && data.ticketCode.size() >= 4 && data.ticketCode.size() <= 32 &&
+             data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.userEmail is string && data.userEmail.size() <= 200 &&
+             data.shopName is string && data.shopName.size() >= 1 && data.shopName.size() <= 120 &&
+             data.subject is string && data.subject.size() >= 2 && data.subject.size() <= 160 &&
+             data.description is string && data.description.size() >= 3 && data.description.size() <= 2000 &&
+             (!('attachmentUri' in data) || (data.attachmentUri is string && data.attachmentUri.size() <= 1000)) &&
+             data.status in ['PENDING', 'IN_PROGRESS', 'RESOLVED', 'REJECTED'] &&
+             (!('lastReplyText' in data) || (data.lastReplyText is string && data.lastReplyText.size() <= 1000)) &&
+             (!('lastReplyBy' in data) || (data.lastReplyBy is string && data.lastReplyBy.size() <= 120)) &&
+             (!('lastReplyAtMillis' in data) || (data.lastReplyAtMillis is int && data.lastReplyAtMillis >= 0));
+    }
+
+    function isValidComplaintReply(data) {
+      return data.ticketId is string && data.ticketId.size() >= 1 && data.ticketId.size() <= 128 &&
+             data.senderUid is string && data.senderUid.size() >= 1 && data.senderUid.size() <= 128 &&
+             data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 120 &&
+             data.senderRole in ['CUSTOMER', 'SUPER_ADMIN', 'SUB_ADMIN'] &&
+             data.message is string && data.message.size() >= 1 && data.message.size() <= 2000;
     }
 
     function isValidAdminUser(data) {
@@ -209,6 +266,7 @@ service cloud.firestore {
              data.role in ['SUPER_ADMIN', 'SUB_ADMIN'] &&
              data.canVerifyPayments is bool &&
              data.canManageUsers is bool &&
+             (!('canReplyComplaints' in data) || data.canReplyComplaints is bool) &&
              data.canViewLimitedReports is bool &&
              data.active is bool;
     }
@@ -233,8 +291,9 @@ service cloud.firestore {
                        incoming().userId == request.auth.uid &&
                        incoming().subscriptionTier == 'FREE' &&
                        incoming().blocked == false &&
+                       (!('accountStatus' in incoming()) || incoming().accountStatus == 'ACTIVE') &&
                        incoming().keys().hasAll(['userId', 'shopName', 'ownerName', 'phone', 'address', 'businessType', 'subscriptionTier', 'subscriptionMonths', 'subscriptionExpiresAtMillis', 'blocked', 'createdAt', 'updatedAt']) &&
-                       incoming().keys().hasOnly(['userId', 'ownerEmail', 'shopName', 'ownerName', 'phone', 'address', 'businessType', 'logoUri', 'subscriptionTier', 'subscriptionMonths', 'subscriptionExpiresAtMillis', 'blocked', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'ownerEmail', 'shopName', 'ownerName', 'phone', 'address', 'businessType', 'logoUri', 'subscriptionTier', 'subscriptionMonths', 'subscriptionStartMillis', 'subscriptionExpiresAtMillis', 'blocked', 'accountStatus', 'banReason', 'suspendedUntilMillis', 'createdAt', 'updatedAt']) &&
                        isValidTimestamp(incoming().createdAt) &&
                        isValidTimestamp(incoming().updatedAt);
       allow update: if isValidId(userId) &&
@@ -245,13 +304,17 @@ service cloud.firestore {
                          (isOwner(userId) &&
                           incoming().subscriptionTier == existing().subscriptionTier &&
                           incoming().subscriptionMonths == existing().subscriptionMonths &&
+                          (!('subscriptionStartMillis' in incoming()) || incoming().subscriptionStartMillis == existing().get('subscriptionStartMillis', 0)) &&
                           incoming().subscriptionExpiresAtMillis == existing().subscriptionExpiresAtMillis &&
                           incoming().blocked == existing().blocked &&
+                          (!('accountStatus' in incoming()) || incoming().accountStatus == existing().get('accountStatus', 'ACTIVE')) &&
+                          (!('banReason' in incoming()) || incoming().banReason == existing().get('banReason', '')) &&
+                          (!('suspendedUntilMillis' in incoming()) || incoming().suspendedUntilMillis == existing().get('suspendedUntilMillis', 0)) &&
                           incoming().diff(existing()).affectedKeys().hasOnly(['ownerEmail', 'shopName', 'ownerName', 'phone', 'address', 'businessType', 'logoUri', 'updatedAt'])) ||
                          (isPaymentAdmin() &&
-                          incoming().diff(existing()).affectedKeys().hasOnly(['subscriptionTier', 'subscriptionMonths', 'subscriptionExpiresAtMillis', 'updatedAt'])) ||
+                          incoming().diff(existing()).affectedKeys().hasOnly(['subscriptionTier', 'subscriptionMonths', 'subscriptionStartMillis', 'subscriptionExpiresAtMillis', 'updatedAt'])) ||
                          (isUserAdmin() &&
-                          incoming().diff(existing()).affectedKeys().hasOnly(['blocked', 'subscriptionTier', 'subscriptionMonths', 'subscriptionExpiresAtMillis', 'updatedAt']))
+                          incoming().diff(existing()).affectedKeys().hasOnly(['blocked', 'accountStatus', 'banReason', 'suspendedUntilMillis', 'subscriptionTier', 'subscriptionMonths', 'subscriptionStartMillis', 'subscriptionExpiresAtMillis', 'updatedAt']))
                        );
       allow delete: if isValidId(userId) && isSuperAdmin();
     }
@@ -384,6 +447,17 @@ service cloud.firestore {
                          incoming().diff(existing()).affectedKeys().hasOnly(['readFlag']);
         allow delete: if isValidId(userId) && isValidId(notifId) && isOwner(userId);
       }
+
+      // Server timestamp sync document (immune to phone clock manipulation)
+      match /clock_sync/{syncId} {
+        allow get: if isValidId(userId) && isValidId(syncId) && (isOwner(userId) || isAnyAdmin());
+        allow create, update: if isValidId(userId) && isValidId(syncId) && (isOwner(userId) || isAnyAdmin()) &&
+                                 incoming().userId == userId &&
+                                 incoming().keys().hasAll(['userId', 'serverTime']) &&
+                                 incoming().keys().hasOnly(['userId', 'serverTime']) &&
+                                 isValidTimestamp(incoming().serverTime);
+        allow delete: if false;
+      }
     }
 
     // SaaS Subscription Packages (Publicly readable to signed-in users; Super Admin writable)
@@ -393,14 +467,54 @@ service cloud.firestore {
       allow create: if isValidId(packageId) && isSuperAdmin() &&
                        isValidSubscriptionPackage(incoming()) &&
                        incoming().keys().hasAll(['tier', 'nameBn', 'nameEn', 'monthlyPriceBdt', 'maxBranches', 'maxEmployees', 'aiEnabled', 'exportEnabled', 'updatedAt']) &&
-                       incoming().keys().hasOnly(['tier', 'nameBn', 'nameEn', 'monthlyPriceBdt', 'maxBranches', 'maxEmployees', 'aiEnabled', 'exportEnabled', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['tier', 'nameBn', 'nameEn', 'monthlyPriceBdt', 'price1mBdt', 'price3mBdt', 'price6mBdt', 'price12mBdt', 'maxBranches', 'maxEmployees', 'aiEnabled', 'exportEnabled', 'enabled', 'featuresSummaryBn', 'featuresSummaryEn', 'updatedAt']) &&
                        isValidTimestamp(incoming().updatedAt);
       allow update: if isValidId(packageId) && isSuperAdmin() &&
                        isValidSubscriptionPackage(incoming()) &&
                        incoming().tier == existing().tier &&
                        isValidTimestamp(incoming().updatedAt) &&
-                       incoming().diff(existing()).affectedKeys().hasOnly(['nameBn', 'nameEn', 'monthlyPriceBdt', 'maxBranches', 'maxEmployees', 'aiEnabled', 'exportEnabled', 'updatedAt']);
+                       incoming().diff(existing()).affectedKeys().hasOnly(['nameBn', 'nameEn', 'monthlyPriceBdt', 'price1mBdt', 'price3mBdt', 'price6mBdt', 'price12mBdt', 'maxBranches', 'maxEmployees', 'aiEnabled', 'exportEnabled', 'enabled', 'featuresSummaryBn', 'featuresSummaryEn', 'updatedAt']);
       allow delete: if isValidId(packageId) && isSuperAdmin();
+    }
+
+    // Package Price & Feature Change History (Super Admin Only)
+    match /package_price_history/{historyId} {
+      allow get, list: if isSuperAdmin();
+      allow create: if isValidId(historyId) && isSuperAdmin() &&
+                       incoming().actorUid == request.auth.uid &&
+                       incoming().tier in ['FREE', 'BASIC', 'PREMIUM', 'BUSINESS'] &&
+                       incoming().previousMonthlyBdt is number &&
+                       incoming().newMonthlyBdt is number &&
+                       incoming().summary is string && incoming().summary.size() >= 1 && incoming().summary.size() <= 400 &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       incoming().keys().hasOnly(['tier', 'actorUid', 'actorEmail', 'previousMonthlyBdt', 'newMonthlyBdt', 'price1mBdt', 'price3mBdt', 'price6mBdt', 'price12mBdt', 'maxBranches', 'maxEmployees', 'packageEnabled', 'summary', 'createdAt']);
+      allow update, delete: if false;
+    }
+
+    // Dynamic Payment Gateway Settings (/app_config/payment_settings)
+    match /app_config/{configId} {
+      allow get: if isValidId(configId) && isSignedIn();
+      allow list: if isAnyAdmin();
+      allow create, update: if isValidId(configId) && configId == 'payment_settings' &&
+                               isSuperAdmin() &&
+                               isValidPaymentSettings(incoming()) &&
+                               isValidTimestamp(incoming().updatedAt) &&
+                               incoming().keys().hasAll(['bkashAccountName', 'bkashNumber', 'bkashEnabled', 'nagadAccountName', 'nagadNumber', 'nagadEnabled', 'instructionsBn', 'instructionsEn', 'updatedAt']) &&
+                               incoming().keys().hasOnly(['bkashAccountName', 'bkashNumber', 'bkashEnabled', 'nagadAccountName', 'nagadNumber', 'nagadEnabled', 'instructionsBn', 'instructionsEn', 'updatedByEmail', 'updatedAt']);
+      allow delete: if false;
+    }
+
+    // Global Duplicate Transaction ID Registry (Enforces unique TrxID across ALL customers)
+    match /trx_registry/{trxKey} {
+      allow get, list: if isPaymentAdmin();
+      allow create: if isValidId(trxKey) && trxKey.size() >= 4 && trxKey.size() <= 64 &&
+                       isSignedIn() &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().trxKey == trxKey &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       incoming().keys().hasAll(['userId', 'trxKey', 'createdAt']) &&
+                       incoming().keys().hasOnly(['userId', 'trxKey', 'createdAt']);
+      allow update, delete: if false;
     }
 
     // Manual bKash / Nagad Payment Requests
@@ -412,18 +526,122 @@ service cloud.firestore {
                        incoming().userId == request.auth.uid &&
                        incoming().status == 'PENDING' &&
                        incoming().keys().hasAll(['userId', 'userEmail', 'shopName', 'method', 'senderNumber', 'transactionId', 'amountBdt', 'packageTier', 'durationMonths', 'status', 'adminNote', 'createdAt', 'updatedAt']) &&
-                       incoming().keys().hasOnly(['userId', 'userEmail', 'shopName', 'method', 'senderNumber', 'transactionId', 'amountBdt', 'packageTier', 'durationMonths', 'screenshotUri', 'status', 'adminNote', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'userEmail', 'shopName', 'method', 'senderNumber', 'transactionId', 'amountBdt', 'lockedUnitMonthlyBdt', 'packageTier', 'durationMonths', 'screenshotUri', 'status', 'adminNote', 'reviewedByEmail', 'reviewedAtMillis', 'createdAt', 'updatedAt']) &&
                        isValidTimestamp(incoming().createdAt) &&
                        isValidTimestamp(incoming().updatedAt);
       allow update: if isValidId(requestId) && isPaymentAdmin() &&
                        isValidPaymentRequest(incoming()) &&
                        existing().status == 'PENDING' &&
                        incoming().status in ['APPROVED', 'REJECTED'] &&
+                       (incoming().status == 'APPROVED' || incoming().adminNote.size() >= 3) &&
                        incoming().userId == existing().userId &&
+                       incoming().amountBdt == existing().amountBdt &&
+                       incoming().packageTier == existing().packageTier &&
+                       incoming().durationMonths == existing().durationMonths &&
+                       incoming().transactionId == existing().transactionId &&
                        incoming().createdAt == existing().createdAt &&
                        isValidTimestamp(incoming().updatedAt) &&
-                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'adminNote', 'updatedAt']);
+                       incoming().diff(existing()).affectedKeys().hasOnly(['status', 'adminNote', 'reviewedByEmail', 'reviewedAtMillis', 'updatedAt']);
       allow delete: if false;
+    }
+
+    // Immutable Subscription Renewal History
+    match /subscription_renewals/{renewalId} {
+      allow get: if isValidId(renewalId) && (isSuperAdmin() || isPaymentAdmin() || (isSignedIn() && existing().userId == request.auth.uid));
+      allow list: if isSuperAdmin() || isPaymentAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isValidId(renewalId) && isPaymentAdmin() &&
+                       incoming().userId is string && incoming().userId.size() >= 1 &&
+                       incoming().paymentRequestId is string && incoming().paymentRequestId.size() >= 1 &&
+                       incoming().packageTier in ['BASIC', 'PREMIUM', 'BUSINESS'] &&
+                       incoming().durationMonths in [1, 3, 6, 12] &&
+                       incoming().amountBdt is number && incoming().amountBdt > 0 &&
+                       incoming().startedAtMillis is int && incoming().startedAtMillis > 0 &&
+                       incoming().expiresAtMillis is int && incoming().expiresAtMillis > incoming().startedAtMillis &&
+                       incoming().approvedByEmail is string &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       incoming().keys().hasOnly(['userId', 'userEmail', 'shopName', 'paymentRequestId', 'packageTier', 'durationMonths', 'amountBdt', 'startedAtMillis', 'expiresAtMillis', 'approvedByEmail', 'createdAt']);
+      allow update, delete: if false;
+    }
+
+    // Customer Complaints & Replies
+    match /complaints/{ticketId} {
+      allow get: if isValidId(ticketId) && (isComplaintAdmin() || (isSignedIn() && existing().userId == request.auth.uid));
+      allow list: if isComplaintAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isValidId(ticketId) && isSignedIn() &&
+                       isValidComplaintTicket(incoming()) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().status == 'PENDING' &&
+                       incoming().keys().hasAll(['ticketCode', 'userId', 'userEmail', 'shopName', 'subject', 'description', 'status', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['ticketCode', 'userId', 'userEmail', 'shopName', 'subject', 'description', 'attachmentUri', 'status', 'lastReplyText', 'lastReplyBy', 'lastReplyAtMillis', 'createdAt', 'updatedAt']) &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       isValidTimestamp(incoming().updatedAt);
+      allow update: if isValidId(ticketId) &&
+                       isValidComplaintTicket(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().ticketCode == existing().ticketCode &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidTimestamp(incoming().updatedAt) && (
+                         (isComplaintAdmin() &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['status', 'lastReplyText', 'lastReplyBy', 'lastReplyAtMillis', 'updatedAt'])) ||
+                         (isOwner(existing().userId) &&
+                          incoming().status == existing().status &&
+                          incoming().diff(existing()).affectedKeys().hasOnly(['lastReplyText', 'lastReplyBy', 'lastReplyAtMillis', 'updatedAt']))
+                       );
+      allow delete: if isSuperAdmin();
+
+      match /replies/{replyId} {
+        allow get: if isValidId(ticketId) && isValidId(replyId) &&
+                      (isComplaintAdmin() || (isSignedIn() && get(/databases/$(database)/documents/complaints/$(ticketId)).data.userId == request.auth.uid));
+        allow list: if isValidId(ticketId) &&
+                       (isComplaintAdmin() || (isSignedIn() && get(/databases/$(database)/documents/complaints/$(ticketId)).data.userId == request.auth.uid));
+        allow create: if isValidId(ticketId) && isValidId(replyId) &&
+                         isValidComplaintReply(incoming()) &&
+                         incoming().ticketId == ticketId &&
+                         incoming().senderUid == request.auth.uid &&
+                         isValidTimestamp(incoming().createdAt) &&
+                         incoming().keys().hasAll(['ticketId', 'senderUid', 'senderName', 'senderRole', 'message', 'createdAt']) &&
+                         incoming().keys().hasOnly(['ticketId', 'senderUid', 'senderName', 'senderRole', 'message', 'createdAt']) && (
+                           (isComplaintAdmin() && incoming().senderRole in ['SUPER_ADMIN', 'SUB_ADMIN']) ||
+                           (isSignedIn() &&
+                            get(/databases/$(database)/documents/complaints/$(ticketId)).data.userId == request.auth.uid &&
+                            incoming().senderRole == 'CUSTOMER')
+                         );
+        allow update, delete: if false;
+      }
+    }
+
+    // User Suspend / Ban / Unban Moderation History
+    match /moderation_history/{historyId} {
+      allow get: if isValidId(historyId) && (isUserAdmin() || (isSignedIn() && existing().userId == request.auth.uid));
+      allow list: if isUserAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isValidId(historyId) && isUserAdmin() &&
+                       incoming().userId is string && incoming().userId.size() >= 1 &&
+                       incoming().action in ['SUSPEND', 'BAN', 'UNBAN'] &&
+                       incoming().reason is string && incoming().reason.size() >= 3 && incoming().reason.size() <= 400 &&
+                       incoming().suspendedUntilMillis is int && incoming().suspendedUntilMillis >= 0 &&
+                       incoming().actorUid == request.auth.uid &&
+                       incoming().actorEmail is string &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       incoming().keys().hasOnly(['userId', 'userEmail', 'shopName', 'action', 'reason', 'suspendedUntilMillis', 'actorUid', 'actorEmail', 'createdAt']);
+      allow update, delete: if false;
+    }
+
+    // Email Notification Outbox (Honest Queue Awaiting Server Trigger / SMTP Backend)
+    match /email_outbox/{mailId} {
+      allow get, list: if isSuperAdmin();
+      allow create: if isValidId(mailId) && isSignedIn() &&
+                       incoming().status == 'PENDING_BACKEND_CONFIG' &&
+                       incoming().recipientEmail is string && incoming().recipientEmail.size() >= 3 && incoming().recipientEmail.size() <= 200 &&
+                       incoming().emailType in ['ORDER_ALERT_OWNER', 'PAYMENT_APPROVED', 'PAYMENT_REJECTED', 'COMPLAINT_REPLY'] &&
+                       incoming().subject is string && incoming().subject.size() >= 1 && incoming().subject.size() <= 200 &&
+                       incoming().bodyPreview is string && incoming().bodyPreview.size() >= 1 && incoming().bodyPreview.size() <= 1000 &&
+                       incoming().relatedUserId is string && incoming().relatedUserId.size() >= 1 &&
+                       isValidTimestamp(incoming().createdAt) &&
+                       incoming().keys().hasOnly(['recipientEmail', 'emailType', 'subject', 'bodyPreview', 'relatedUserId', 'relatedOrderId', 'status', 'statusNote', 'createdAt']) && (
+                         (incoming().emailType == 'ORDER_ALERT_OWNER' && incoming().relatedUserId == request.auth.uid) ||
+                         isAnyAdmin()
+                       );
+      allow update, delete: if false;
     }
 
     // Super Admin & Sub-Admin Assignments
@@ -434,7 +652,7 @@ service cloud.firestore {
                        isValidAdminUser(incoming()) &&
                        incoming().uid == adminUid &&
                        incoming().keys().hasAll(['uid', 'email', 'name', 'role', 'canVerifyPayments', 'canManageUsers', 'canViewLimitedReports', 'active', 'createdAt', 'updatedAt']) &&
-                       incoming().keys().hasOnly(['uid', 'email', 'name', 'role', 'canVerifyPayments', 'canManageUsers', 'canViewLimitedReports', 'active', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['uid', 'email', 'name', 'role', 'canVerifyPayments', 'canManageUsers', 'canReplyComplaints', 'canViewLimitedReports', 'active', 'createdAt', 'updatedAt']) &&
                        isValidTimestamp(incoming().createdAt) &&
                        isValidTimestamp(incoming().updatedAt);
       allow update: if isValidId(adminUid) && isSuperAdmin() &&
@@ -442,11 +660,11 @@ service cloud.firestore {
                        incoming().uid == existing().uid &&
                        incoming().createdAt == existing().createdAt &&
                        isValidTimestamp(incoming().updatedAt) &&
-                       incoming().diff(existing()).affectedKeys().hasOnly(['email', 'name', 'role', 'canVerifyPayments', 'canManageUsers', 'canViewLimitedReports', 'active', 'updatedAt']);
+                       incoming().diff(existing()).affectedKeys().hasOnly(['email', 'name', 'role', 'canVerifyPayments', 'canManageUsers', 'canReplyComplaints', 'canViewLimitedReports', 'active', 'updatedAt']);
       allow delete: if isValidId(adminUid) && isSuperAdmin();
     }
 
-    // Immutable Admin Audit Logs
+    // Immutable Admin Audit Logs (Readable ONLY by Super Admin)
     match /audit_logs/{logId} {
       allow get: if isValidId(logId) && isSuperAdmin();
       allow list: if isSuperAdmin();

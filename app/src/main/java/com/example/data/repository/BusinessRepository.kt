@@ -369,8 +369,13 @@ class BusinessRepository(
                             logoUri = doc.logoUri ?: local?.logoUri,
                             subscriptionTier = doc.subscriptionTier,
                             subscriptionMonths = doc.subscriptionMonths.toInt(),
+                            subscriptionStartMillis = doc.subscriptionStartMillis,
                             subscriptionExpiresAtMillis = doc.subscriptionExpiresAtMillis,
                             blocked = doc.blocked,
+                            accountStatus = doc.accountStatus.ifBlank { if (doc.blocked) "BANNED" else "ACTIVE" },
+                            banReason = doc.banReason,
+                            suspendedUntilMillis = doc.suspendedUntilMillis,
+                            lastExpiryWarningDays = local?.lastExpiryWarningDays ?: 0,
                             syncStatus = SyncStatus.SYNCED.name,
                             updatedAtMillis = doc.updatedAt?.toDate()?.time ?: System.currentTimeMillis()
                         )

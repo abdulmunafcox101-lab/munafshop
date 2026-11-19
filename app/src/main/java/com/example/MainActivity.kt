@@ -58,6 +58,7 @@ import com.example.ui.screens.AiBusinessAssistantScreen
 import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.BlockedAccountGate
 import com.example.ui.screens.BusinessProfileOnboardingScreen
+import com.example.ui.screens.CustomerComplaintsScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.FirebaseConfigMissingScreen
 import com.example.ui.screens.InventoryScreen
@@ -77,7 +78,7 @@ import com.google.firebase.auth.auth
 import kotlinx.coroutines.launch
 
 private enum class OverlayScreen {
-    NONE, REPORTS, VOICE_ACCOUNTING, AI_ASSISTANT, SUBSCRIPTION, ADMIN_PANEL
+    NONE, REPORTS, VOICE_ACCOUNTING, AI_ASSISTANT, SUBSCRIPTION, COMPLAINTS, ADMIN_PANEL
 }
 
 class MainActivity : ComponentActivity() {
@@ -197,15 +198,32 @@ private fun AuthenticatedBusinessShell(
     val voiceDraftState by mainViewModel.voiceDraftState.collectAsStateWithLifecycle()
 
     val packages by adminViewModel.packages.collectAsStateWithLifecycle()
+    val paymentSettings by adminViewModel.paymentSettings.collectAsStateWithLifecycle()
+    val serverNowMillis by adminViewModel.serverNowMillis.collectAsStateWithLifecycle()
     val myPaymentRequests by adminViewModel.myPaymentRequests.collectAsStateWithLifecycle()
+    val myRenewals by adminViewModel.myRenewals.collectAsStateWithLifecycle()
+    val myComplaints by adminViewModel.myComplaints.collectAsStateWithLifecycle()
+    val selectedTicketReplies by adminViewModel.selectedTicketReplies.collectAsStateWithLifecycle()
+
     val adminProfile by adminViewModel.myAdminProfile.collectAsStateWithLifecycle()
+    val kpis by adminViewModel.dashboardKpis.collectAsStateWithLifecycle()
     val allUsers by adminViewModel.allUsers.collectAsStateWithLifecycle()
     val allPayments by adminViewModel.allPaymentRequests.collectAsStateWithLifecycle()
+    val allComplaints by adminViewModel.allComplaints.collectAsStateWithLifecycle()
+    val moderationHistory by adminViewModel.moderationHistory.collectAsStateWithLifecycle()
+    val priceHistory by adminViewModel.packagePriceHistory.collectAsStateWithLifecycle()
+    val emailOutbox by adminViewModel.emailOutbox.collectAsStateWithLifecycle()
     val subAdmins by adminViewModel.subAdmins.collectAsStateWithLifecycle()
     val auditLogs by adminViewModel.auditLogs.collectAsStateWithLifecycle()
     val adminStatusMsg by adminViewModel.statusMessage.collectAsStateWithLifecycle()
 
     val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(uiState.profile?.userId, uiState.profile?.subscriptionExpiresAtMillis) {
+        if (uiState.profile != null) {
+            mainViewModel.evaluateSubscriptionExpiryAlerts(serverNowMillis)
+        }
+    }
 
     LaunchedEffect(toastMsg) {
         val msg = toastMsg
@@ -234,7 +252,7 @@ private fun AuthenticatedBusinessShell(
         }
     }
 
-    val activePkg = mainViewModel.activeTier(packages)
+    val activePkg = mainViewModel.activeTier(packages, serverNowMillis)
 
     // If profile has not been created yet, show Business Onboarding
     if (uiState.profile == null) {
@@ -248,12 +266,18 @@ private fun AuthenticatedBusinessShell(
         return
     }
 
-    // If account was blocked by Super/Sub-Admin, show clear status gate with sign-out & refresh
+    // If account was suspended/banned by Super/Sub-Admin, show clear status gate without deleting business data
     if (uiState.profile?.blocked == true && adminProfile == null) {
         BlockedAccountGate(
             language = uiState.language,
             shopName = uiState.profile?.shopName.orEmpty(),
-            onRefresh = mainViewModel::refreshFromCloud,
+            accountStatus = uiState.profile?.accountStatus ?: "BANNED",
+            banReason = uiState.profile?.banReason.orEmpty(),
+            suspendedUntilMillis = uiState.profile?.suspendedUntilMillis ?: 0L,
+            onRefresh = {
+                mainViewModel.refreshFromCloud()
+                adminViewModel.refreshServerClock()
+            },
             onSignOut = { signOutUser(credentialManager, scope) }
         )
         return
@@ -355,20 +379,48 @@ private fun AuthenticatedBusinessShell(
 
                 OverlayScreen.SUBSCRIPTION -> SubscriptionScreen(
                     language = uiState.language,
-                    currentTierName = uiState.profile?.subscriptionTier ?: "FREE",
-                    shopName = uiState.profile?.shopName ?: "MUNAF ONLINE SHOP",
+                    profile = uiState.profile,
+                    serverNowMillis = serverNowMillis,
                     packages = packages,
+                    paymentSettings = paymentSettings,
                     myRequests = myPaymentRequests,
-                    onSubmitPayment = { method, sender, trxId, amount, tier, months, screenshotUri ->
+                    myRenewals = myRenewals,
+                    onSubmitPayment = { method, sender, trxId, amount, lockedUnitMonthly, tier, months, screenshotUri ->
                         adminViewModel.submitManualPayment(
                             shopName = uiState.profile?.shopName ?: "MUNAF ONLINE SHOP",
                             method = method,
                             senderNumber = sender,
                             transactionId = trxId,
                             amountBdt = amount,
+                            lockedUnitMonthlyBdt = lockedUnitMonthly,
                             packageTier = tier,
                             durationMonths = months,
                             screenshotUri = screenshotUri
+                        )
+                    },
+                    onOpenComplaints = { overlay = OverlayScreen.COMPLAINTS },
+                    onBack = { overlay = OverlayScreen.NONE }
+                )
+
+                OverlayScreen.COMPLAINTS -> CustomerComplaintsScreen(
+                    language = uiState.language,
+                    shopName = uiState.profile?.shopName ?: "MUNAF ONLINE SHOP",
+                    complaints = myComplaints,
+                    selectedReplies = selectedTicketReplies,
+                    onSelectTicket = adminViewModel::selectComplaintTicket,
+                    onSubmitComplaint = { subj, desc, att ->
+                        adminViewModel.submitComplaint(
+                            shopName = uiState.profile?.shopName ?: "MUNAF ONLINE SHOP",
+                            subject = subj,
+                            description = desc,
+                            attachmentUri = att
+                        )
+                    },
+                    onReplyAsCustomer = { ticket, msg ->
+                        adminViewModel.replyComplaintAsCustomer(
+                            ticket = ticket,
+                            customerName = uiState.profile?.ownerName ?: "Customer",
+                            message = msg
                         )
                     },
                     onBack = { overlay = OverlayScreen.NONE }
@@ -380,14 +432,25 @@ private fun AuthenticatedBusinessShell(
                         AdminPanelScreen(
                             language = uiState.language,
                             adminProfile = admin,
+                            kpis = kpis,
+                            serverNowMillis = serverNowMillis,
                             allUsers = allUsers,
                             allPayments = allPayments,
+                            allComplaints = allComplaints,
+                            selectedReplies = selectedTicketReplies,
+                            moderationHistory = moderationHistory,
                             packages = packages,
+                            priceHistory = priceHistory,
+                            paymentSettings = paymentSettings,
+                            emailOutbox = emailOutbox,
                             subAdmins = subAdmins,
                             auditLogs = auditLogs,
+                            onSelectComplaintTicket = adminViewModel::selectComplaintTicket,
                             onReviewPayment = adminViewModel::reviewPayment,
-                            onToggleBlock = adminViewModel::toggleUserBlock,
+                            onModerateUser = adminViewModel::moderateUser,
+                            onReplyComplaint = adminViewModel::replyComplaintAsAdmin,
                             onUpdatePackage = adminViewModel::updatePackage,
+                            onSavePaymentSettings = adminViewModel::savePaymentSettings,
                             onSaveSubAdmin = adminViewModel::saveSubAdmin,
                             onBack = { overlay = OverlayScreen.NONE }
                         )
@@ -444,6 +507,7 @@ private fun AuthenticatedBusinessShell(
                         voiceServices = voiceServices,
                         onOpenReports = { overlay = OverlayScreen.REPORTS },
                         onOpenSubscription = { overlay = OverlayScreen.SUBSCRIPTION },
+                        onOpenComplaints = { overlay = OverlayScreen.COMPLAINTS },
                         onOpenAiAssistant = { overlay = OverlayScreen.AI_ASSISTANT },
                         onOpenVoiceAccounting = { overlay = OverlayScreen.VOICE_ACCOUNTING },
                         onOpenAdminPanel = { overlay = OverlayScreen.ADMIN_PANEL },

@@ -622,9 +622,13 @@ fun BusinessProfileOnboardingScreen(
 fun BlockedAccountGate(
     language: AppLanguage,
     shopName: String,
+    accountStatus: String = "BANNED",
+    banReason: String = "",
+    suspendedUntilMillis: Long = 0L,
     onRefresh: () -> Unit,
     onSignOut: () -> Unit
 ) {
+    val isSuspended = accountStatus == "SUSPENDED"
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
@@ -648,21 +652,52 @@ fun BlockedAccountGate(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = tr(language, "অ্যাকাউন্ট সাময়িকভাবে স্থগিত", "Account Temporarily Suspended"),
+                        text = if (isSuspended) {
+                            tr(language, "অ্যাকাউন্ট সাময়িকভাবে স্থগিত (Suspended)", "Account Temporarily Suspended")
+                        } else {
+                            tr(language, "অ্যাকাউন্ট স্থায়ীভাবে ব্যান করা হয়েছে", "Account Permanently Banned")
+                        },
                         style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.onErrorContainer,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center
                     )
                     Text(
                         text = tr(
                             language,
-                            "$shopName অ্যাকাউন্টটি অ্যাডমিন কর্তৃক ব্লক করা হয়েছে। আপনার পূর্বের হিসাব সুরক্ষিত আছে। সাপোর্টের সাথে যোগাযোগ করুন।",
-                            "$shopName has been blocked by an administrator. Your historical data remains safe. Please contact support."
+                            "$shopName অ্যাকাউন্টটি অ্যাডমিন কর্তৃক সীমিত করা হয়েছে। আপনার ব্যবসার পূর্বের কোনো হিসাব বা ডেটা মুছে ফেলা হয়নি।",
+                            "$shopName has been restricted by an administrator. All your historical business data remains safely preserved."
                         ),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         textAlign = TextAlign.Center
                     )
+                    if (banReason.isNotBlank()) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = tr(language, "কারণ: $banReason", "Reason: $banReason"),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(10.dp)
+                            )
+                        }
+                    }
+                    if (isSuspended && suspendedUntilMillis > 0L) {
+                        val dateText = remember(suspendedUntilMillis) {
+                            java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault())
+                                .format(java.util.Date(suspendedUntilMillis))
+                        }
+                        Text(
+                            text = tr(language, "সম্ভাব্য শেষ সময়: $dateText", "Suspended Until: $dateText"),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                         OutlinedButton(onClick = onRefresh, modifier = Modifier.weight(1f)) {
                             Text(tr(language, "আবার যাচাই", "Re-check"))
