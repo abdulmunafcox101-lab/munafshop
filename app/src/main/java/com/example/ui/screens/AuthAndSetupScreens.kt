@@ -91,6 +91,7 @@ fun AuthScreen(
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var shaCopied by remember { mutableStateOf(false) }
+    var showDiagnostics by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         attemptAutoSignIn(
@@ -291,7 +292,22 @@ fun AuthScreen(
                             errorMessage = msg
                         },
                         scope = scope,
-                        onAuthCancelled = { isLoading = false }
+                        onAuthCancelled = { detail ->
+                            isLoading = false
+                            errorMessage = if (!detail.isNullOrBlank()) {
+                                tr(
+                                    language,
+                                    "Google সাইন-ইন বাতিল/বন্ধ হয়েছে ($detail)। নিচের SHA-1টি Firebase Console-এ যুক্ত আছে কি না যাচাই করুন।",
+                                    "Google Sign-In dismissed ($detail). Verify the APK SHA-1 below is registered in Firebase Console."
+                                )
+                            } else {
+                                tr(
+                                    language,
+                                    "Google সাইন-ইন উইন্ডো বন্ধ হয়ে গেছে। যদি পপআপ নিজে থেকেই বন্ধ হয়, নিচের SHA-1 কপি করে Firebase Console-এ যোগ করুন।",
+                                    "Google Sign-In was dismissed. If it closed automatically, register the APK SHA-1 below in Firebase Console."
+                                )
+                            }
+                        }
                     )
                 },
                 enabled = !isLoading,
@@ -330,6 +346,53 @@ fun AuthScreen(
                 textAlign = TextAlign.Center,
                 modifier = Modifier.widthIn(max = 500.dp)
             )
+
+            if (!appSha1.isNullOrBlank()) {
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { showDiagnostics = !showDiagnostics },
+                    modifier = Modifier.testTag("toggle_sha_diagnostics_button")
+                ) {
+                    Text(
+                        tr(
+                            language,
+                            if (showDiagnostics) "APK SHA-1 লুকান" else "লগইনে সমস্যা? APK SHA-1 দেখুন",
+                            if (showDiagnostics) "Hide APK SHA-1" else "Trouble signing in? View APK SHA-1"
+                        )
+                    )
+                }
+                if (showDiagnostics && errorMessage == null) {
+                    Spacer(Modifier.height(8.dp))
+                    Card(
+                        modifier = Modifier
+                            .widthIn(max = 560.dp)
+                            .fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Package: ${context.packageName}\nSHA-1: $appSha1",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            OutlinedButton(
+                                onClick = {
+                                    clipboardManager.setText(AnnotatedString(appSha1))
+                                    shaCopied = true
+                                }
+                            ) {
+                                Text(
+                                    if (shaCopied) tr(language, "SHA-1 কপি হয়েছে", "SHA-1 Copied")
+                                    else tr(language, "SHA-1 কপি করুন", "Copy SHA-1")
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

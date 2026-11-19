@@ -2,6 +2,7 @@ package com.example.firebase
 
 import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
@@ -31,6 +32,12 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 
 private const val TAG = "Auth"
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
 
 @Suppress("DEPRECATION")
 fun getAppSigningSha1(context: Context): String? = runCatching {
@@ -130,7 +137,7 @@ fun onGoogleSignInClicked(
     onAuthSuccess: () -> Unit,
     onAuthError: (String) -> Unit,
     scope: CoroutineScope,
-    onAuthCancelled: () -> Unit = {}
+    onAuthCancelled: (String?) -> Unit = {}
 ) {
     if (!isFirebaseReady(context)) {
         onAuthError("Firebase configuration (google-services.json) is missing in this build.")
@@ -141,7 +148,7 @@ fun onGoogleSignInClicked(
         onAuthError("Google Sign-In configuration missing: default_web_client_id not found")
         return
     }
-    val activity = context as? Activity
+    val activity = context.findActivity()
     if (activity == null) {
         onAuthError("Activity context required for Google Sign-In")
         return
@@ -162,7 +169,7 @@ fun onGoogleSignInClicked(
             }
         } catch (e: GetCredentialCancellationException) {
             Log.w(TAG, "Google Sign-In flow cancelled or dismissed: ${e.message}", e)
-            onAuthCancelled()
+            onAuthCancelled(e.message)
         } catch (e: Exception) {
             Log.e(TAG, "Google Sign-In failed", e)
             val detail = e.localizedMessage?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
