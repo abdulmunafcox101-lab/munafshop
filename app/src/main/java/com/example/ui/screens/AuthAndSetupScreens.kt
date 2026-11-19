@@ -6,6 +6,7 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -146,6 +147,20 @@ fun AuthScreen(
             }
 
             Spacer(Modifier.height(12.dp))
+
+            // Owner Portrait at Top of Login Page
+            Image(
+                painter = painterResource(id = R.drawable.img_login_owner_portrait),
+                contentDescription = tr(language, "মালিকের ছবি", "Owner Portrait"),
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(104.dp)
+                    .clip(CircleShape)
+                    .border(3.dp, EmeraldPrimary, CircleShape)
+                    .testTag("login_owner_portrait")
+            )
+
+            Spacer(Modifier.height(14.dp))
 
             // Hero Banner Card
             Card(
