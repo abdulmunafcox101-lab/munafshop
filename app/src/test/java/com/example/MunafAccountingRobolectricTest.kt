@@ -11,6 +11,7 @@ import com.example.data.local.TransactionEntity
 import com.example.data.local.TxLineItem
 import com.example.data.model.PartyType
 import com.example.data.model.TransactionType
+import com.example.firebase.FirebaseRuntimeConfig
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -185,5 +186,51 @@ class MunafAccountingRobolectricTest {
 
         assertEquals(11.0, mainProd.stockQty, 0.001)
         assertEquals(4.0, targetProd.stockQty, 0.001)
+    }
+
+    @Test
+    fun `firebase runtime config parses valid json and rejects mismatched package`() {
+        val sampleJson = """
+            {
+              "project_info": {
+                "project_number": "1234567890",
+                "project_id": "test-project-id",
+                "storage_bucket": "test-project-id.appspot.com"
+              },
+              "client": [
+                {
+                  "client_info": {
+                    "mobilesdk_app_id": "1:1234567890:android:abcdef123456",
+                    "android_client_info": {
+                      "package_name": "com.aistudio.munafshop.bxrkpq"
+                    }
+                  },
+                  "oauth_client": [
+                    {
+                      "client_id": "1234567890-web.apps.googleusercontent.com",
+                      "client_type": 3
+                    }
+                  ],
+                  "api_key": [
+                    { "current_key": "fake-test-api-key-value" }
+                  ]
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val valid = FirebaseRuntimeConfig.parseAndValidate(sampleJson, "com.aistudio.munafshop.bxrkpq")
+        assertEquals(true, valid.isSuccess)
+        val parsed = valid.getOrThrow()
+        assertEquals("test-project-id", parsed.projectId)
+        assertEquals("1:1234567890:android:abcdef123456", parsed.applicationId)
+        assertEquals("fake-test-api-key-value", parsed.apiKey)
+        assertEquals("1234567890-web.apps.googleusercontent.com", parsed.webClientId)
+
+        val wrongPkg = FirebaseRuntimeConfig.parseAndValidate(sampleJson, "com.other.app")
+        assertEquals(true, wrongPkg.isFailure)
+
+        val invalidJson = FirebaseRuntimeConfig.parseAndValidate("not-json", "com.aistudio.munafshop.bxrkpq")
+        assertEquals(true, invalidJson.isFailure)
     }
 }

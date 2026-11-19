@@ -66,6 +66,7 @@ import androidx.credentials.CredentialManager
 import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.model.AppLanguage
+import com.example.firebase.FirebaseRuntimeConfig
 import com.example.firebase.attemptAutoSignIn
 import com.example.firebase.onGoogleSignInClicked
 import com.example.i18n.Strings
@@ -572,8 +573,48 @@ fun BlockedAccountGate(
 @Composable
 fun FirebaseConfigMissingScreen(
     language: AppLanguage,
-    onLanguageChange: (AppLanguage) -> Unit
+    onLanguageChange: (AppLanguage) -> Unit,
+    onConfigured: () -> Unit = {}
 ) {
+    val context = LocalContext.current
+    var jsonInput by remember { mutableStateOf("") }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
+
+    val jsonFilePicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val readResult = runCatching {
+            context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                ?: error("Unable to read selected file")
+        }
+        readResult.fold(
+            onSuccess = { text ->
+                jsonInput = text
+                FirebaseRuntimeConfig.saveAndInitialize(context, text).fold(
+                    onSuccess = {
+                        errorMsg = null
+                        onConfigured()
+                    },
+                    onFailure = { err ->
+                        errorMsg = err.localizedMessage ?: tr(
+                            language,
+                            "সঠিক google-services.json ফাইল নয়।",
+                            "Invalid google-services.json file."
+                        )
+                    }
+                )
+            },
+            onFailure = { err ->
+                errorMsg = err.localizedMessage ?: tr(
+                    language,
+                    "ফাইল পড়া যায়নি।",
+                    "Failed to read file."
+                )
+            }
+        )
+    }
+
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background
@@ -583,13 +624,13 @@ fun FirebaseConfigMissingScreen(
                 .fillMaxSize()
                 .systemBarsPadding()
                 .verticalScroll(rememberScrollState())
-                .padding(24.dp),
+                .padding(20.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Row(
                 modifier = Modifier
-                    .widthIn(max = 520.dp)
+                    .widthIn(max = 540.dp)
                     .fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
@@ -605,41 +646,141 @@ fun FirebaseConfigMissingScreen(
                     label = { Text("English") }
                 )
             }
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
             Card(
                 modifier = Modifier
-                    .widthIn(max = 520.dp)
+                    .widthIn(max = 540.dp)
                     .fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column(
                     modifier = Modifier.padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
                         text = tr(
                             language,
-                            "Firebase কনফিগারেশন পাওয়া যায়নি",
-                            "Firebase Configuration Missing"
+                            "Firebase কনফিগারেশন সেটআপ",
+                            "Firebase Configuration Setup"
                         ),
                         style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = tr(
                             language,
-                            "এই APK বিল্ডে app/google-services.json ফাইলটি যুক্ত ছিল না। Google সাইন-ইন ও Cloud Firestore চালু করতে আপনার GitHub রিপোজিটরির Settings > Secrets and variables > Actions এ GOOGLE_SERVICES_JSON নামে Secret যোগ করুন অথবা প্রাইভেট রিপোর app/ ফোল্ডারে google-services.json আপলোড করে পুনরায় বিল্ড করুন।",
-                            "This APK was built without app/google-services.json. Add GOOGLE_SERVICES_JSON under GitHub Repository Settings > Secrets and variables > Actions (or place google-services.json in app/ in your private repo) and re-run the build."
+                            "এই APK বিল্ডে google-services.json সংযুক্ত ছিল না। এখনই সরাসরি ফোনে থাকা google-services.json ফাইল বেছে নিন অথবা নিচে JSON কোড পেস্ট করে চালু করুন।",
+                            "This APK was built without google-services.json. Select your google-services.json file from your phone or paste its JSON below to activate Google Sign-In & Cloud sync immediately."
                         ),
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onErrorContainer
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+
+                    Button(
+                        onClick = {
+                            jsonFilePicker.launch(arrayOf("application/json", "text/plain", "*/*"))
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp)
+                            .testTag("pick_google_services_button"),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text(
+                            tr(
+                                language,
+                                "ফাইল থেকে google-services.json লোড করুন",
+                                "Select google-services.json File"
+                            )
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = jsonInput,
+                        onValueChange = {
+                            jsonInput = it
+                            errorMsg = null
+                        },
+                        label = {
+                            Text(
+                                tr(
+                                    language,
+                                    "অথবা এখানে google-services.json পেস্ট করুন",
+                                    "Or paste google-services.json content here"
+                                )
+                            )
+                        },
+                        placeholder = { Text("{\"project_info\": { ... }}") },
+                        minLines = 4,
+                        maxLines = 7,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("google_services_json_input")
+                    )
+
+                    if (!errorMsg.isNullOrBlank()) {
+                        Text(
+                            text = errorMsg.orEmpty(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            FirebaseRuntimeConfig.saveAndInitialize(context, jsonInput).fold(
+                                onSuccess = {
+                                    errorMsg = null
+                                    onConfigured()
+                                },
+                                onFailure = { err ->
+                                    errorMsg = err.localizedMessage ?: tr(
+                                        language,
+                                        "সঠিক google-services.json JSON দিন।",
+                                        "Please enter valid google-services.json content."
+                                    )
+                                }
+                            )
+                        },
+                        enabled = jsonInput.isNotBlank(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .testTag("apply_firebase_config_button"),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text(
+                            tr(
+                                language,
+                                "কনফিগ সেভ ও অ্যাপ চালু করুন",
+                                "Save Config & Continue"
+                            )
+                        )
+                    }
+
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = tr(
+                                language,
+                                "টিপস: ভবিষ্যতের প্রতিটি APK বিল্ডে অটো-কনফিগ পেতে GitHub রিপোর Settings > Secrets > Actions-এ GOOGLE_SERVICES_JSON যোগ করুন (প্যাকেজ: ${context.packageName})।",
+                                "Tip: To bundle automatically in future builds, add GOOGLE_SERVICES_JSON in GitHub Settings > Secrets > Actions (package: ${context.packageName})."
+                            ),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
                 }
             }
         }
     }
 }
+
 
 

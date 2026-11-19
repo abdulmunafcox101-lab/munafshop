@@ -35,15 +35,17 @@ private fun resolveDefaultWebClientId(context: Context): String? {
         "string",
         context.packageName
     )
-    if (resId == 0) return null
-    return runCatching { context.getString(resId) }
-        .getOrNull()
-        ?.takeIf { it.isNotBlank() }
+    if (resId != 0) {
+        val resValue = runCatching { context.getString(resId) }
+            .getOrNull()
+            ?.takeIf { it.isNotBlank() }
+        if (resValue != null) return resValue
+    }
+    return FirebaseRuntimeConfig.getWebClientId(context)
 }
 
 private fun isFirebaseReady(context: Context): Boolean {
-    return FirebaseApp.getApps(context).isNotEmpty() ||
-        runCatching { FirebaseApp.initializeApp(context) != null }.getOrDefault(false)
+    return FirebaseRuntimeConfig.ensureInitialized(context)
 }
 
 fun FirebaseAuth.authStateFlow(): Flow<FirebaseUser?> = callbackFlow {

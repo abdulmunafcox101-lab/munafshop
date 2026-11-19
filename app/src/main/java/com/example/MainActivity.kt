@@ -47,6 +47,7 @@ import com.example.data.model.AppThemeMode
 import com.example.data.repository.AiAssistantRepository
 import com.example.data.repository.BusinessRepository
 import com.example.data.repository.SaasAdminRepository
+import com.example.firebase.FirebaseRuntimeConfig
 import com.example.firebase.authStateFlow
 import com.example.firebase.configureAppCheck
 import com.example.firebase.signOutUser
@@ -82,7 +83,9 @@ private enum class OverlayScreen {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Initialize Firebase App Check immediately after super.onCreate
+        // Ensure Firebase is initialized (from bundled google-services.json or saved runtime config)
+        FirebaseRuntimeConfig.ensureInitialized(this)
+        // Initialize Firebase App Check immediately after FirebaseApp initialization
         configureAppCheck(this, intent)
         enableEdgeToEdge()
 
@@ -99,16 +102,19 @@ private fun MunafOnlineShopRoot() {
     val prefs = remember(context) { UserPreferences(context.applicationContext) }
     val language by prefs.languageFlow.collectAsStateWithLifecycle(initialValue = AppLanguage.BN)
     val themeMode by prefs.themeModeFlow.collectAsStateWithLifecycle(initialValue = AppThemeMode.SYSTEM)
-    val isFirebaseInitialized = remember(context) {
-        FirebaseApp.getApps(context).isNotEmpty() ||
-            runCatching { FirebaseApp.initializeApp(context) != null }.getOrDefault(false)
+    var isFirebaseInitialized by remember(context) {
+        mutableStateOf(FirebaseRuntimeConfig.ensureInitialized(context))
     }
 
     MunafShopTheme(themeMode = themeMode) {
         if (!isFirebaseInitialized) {
             FirebaseConfigMissingScreen(
                 language = language,
-                onLanguageChange = { newLang -> scope.launch { prefs.setLanguage(newLang) } }
+                onLanguageChange = { newLang -> scope.launch { prefs.setLanguage(newLang) } },
+                onConfigured = {
+                    configureAppCheck(context, null)
+                    isFirebaseInitialized = FirebaseRuntimeConfig.ensureInitialized(context)
+                }
             )
             return@MunafShopTheme
         }
